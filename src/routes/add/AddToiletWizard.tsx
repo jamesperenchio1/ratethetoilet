@@ -80,14 +80,24 @@ export function AddToiletWizard() {
         return;
       }
 
-      const newToilet = await withIdentity(async (p) => {
-        const t = await createToilet(p.id, draftToInput(draft));
-        const paths = draft.photos
-          .filter((ph) => ph.status === "done" && ph.storagePath)
-          .map((ph) => ph.storagePath as string);
-        await attachDraftPhotos(p.id, t.id, paths);
-        return t;
-      });
+      let newToilet: Toilet;
+      try {
+        newToilet = await withIdentity(async (p) => {
+          const t = await createToilet(p.id, draftToInput(draft));
+          const paths = draft.photos
+            .filter((ph) => ph.status === "done" && ph.storagePath)
+            .map((ph) => ph.storagePath as string);
+          await attachDraftPhotos(p.id, t.id, paths);
+          return t;
+        });
+      } catch (err) {
+        if (err instanceof Error && err.message.includes("rate_limit_exceeded")) {
+          setRetryAt(null);
+          setStep("rate-limited");
+          return;
+        }
+        throw err;
+      }
       setPosted(newToilet);
       setStep("posted");
     } finally {

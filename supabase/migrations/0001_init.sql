@@ -120,6 +120,16 @@ as $$
   select coalesce((select is_admin from public.profiles where id = auth.uid()), false);
 $$;
 
+create function public.is_banned_self()
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select coalesce((select is_banned from public.profiles where id = auth.uid()), false);
+$$;
+
 -- Mints a profile (and handle) for the current session the first time it's
 -- called, and is a no-op afterwards. This is the "first post triggers ...
 -- once, ever" moment from the flow map — never called just for browsing.
@@ -178,6 +188,38 @@ begin
   return jsonb_build_object('allowed', false, 'retryAt', oldest_in_window + interval '1 hour');
 end;
 $$;
+
+-- Server-side enforcement of the same "3 posts/hour" rule can_post() reports
+-- for the UI. can_post() is advisory only (lets the app show S17 before the
+-- user fills out a whole form) — this trigger is what actually stops a
+-- client that skips the RPC and posts straight to PostgREST.
+create function public.enforce_post_rate_limit()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  recent_count int;
+begin
+  select count(*) into recent_count
+  from (
+    select created_at from public.toilets where author_id = new.author_id and created_at > now() - interval '1 hour'
+    union all
+    select created_at from public.reviews where author_id = new.author_id and created_at > now() - interval '1 hour'
+  ) recent;
+
+  if recent_count >= 3 then
+    raise exception 'rate_limit_exceeded' using errcode = 'P0001';
+  end if;
+  return new;
+end;
+$$;
+
+create trigger toilets_rate_limit before insert on public.toilets
+  for each row execute function public.enforce_post_rate_limit();
+create trigger reviews_rate_limit before insert on public.reviews
+  for each row execute function public.enforce_post_rate_limit();
 
 -- Plain-Postgres haversine distance search (no PostGIS dependency).
 create function public.toilets_near(p_lat double precision, p_lng double precision, p_radius_m double precision default 3000)
@@ -284,22 +326,22 @@ grant update (handle) on public.profiles to authenticated;
 create policy toilets_select on public.toilets for select
   using (hidden = false or author_id = auth.uid() or public.is_admin());
 create policy toilets_insert on public.toilets for insert
-  with check (author_id = auth.uid());
+  with check (author_id = auth.uid() and not public.is_banned_self());
 
 create policy toilet_photos_select on public.toilet_photos for select
   using (hidden = false or author_id = auth.uid() or public.is_admin());
 create policy toilet_photos_insert on public.toilet_photos for insert
-  with check (author_id = auth.uid());
+  with check (author_id = auth.uid() and not public.is_banned_self());
 
 create policy reviews_select on public.reviews for select
   using (hidden = false or author_id = auth.uid() or public.is_admin());
 create policy reviews_insert on public.reviews for insert
-  with check (author_id = auth.uid());
+  with check (author_id = auth.uid() and not public.is_banned_self());
 
 -- reports: anyone can file one (no account required); only admins can read
 -- or resolve the queue.
 create policy reports_insert on public.reports for insert
-  with check (reporter_id is null or reporter_id = auth.uid());
+  with check ((reporter_id is null or reporter_id = auth.uid()) and not public.is_banned_self());
 create policy reports_select_admin on public.reports for select using (public.is_admin());
 create policy reports_update_admin on public.reports for update
   using (public.is_admin()) with check (public.is_admin());
@@ -319,6 +361,7 @@ grant select, update on public.reports to authenticated;
 
 grant execute on function public.mint_handle() to anon, authenticated;
 grant execute on function public.is_admin() to anon, authenticated;
+grant execute on function public.is_banned_self() to anon, authenticated;
 grant execute on function public.ensure_profile() to authenticated;
 grant execute on function public.can_post() to authenticated;
 grant execute on function public.toilets_near(double precision, double precision, double precision) to anon, authenticated;
@@ -335,4 +378,4 @@ values ('toilet-photos', 'toilet-photos', true)
 on conflict (id) do nothing;
 
 create policy toilet_photos_storage_insert on storage.objects for insert to authenticated
-  with check (bucket_id = 'toilet-photos');
+  with check (bucket_id = 'toilet-photos' and not public.is_banned_self());
