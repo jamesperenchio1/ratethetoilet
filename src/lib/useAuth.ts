@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "./supabase";
 import type { Profile } from "./types";
@@ -51,14 +51,30 @@ export function useAuth() {
     };
   }, [loadProfile]);
 
+  // Guards against concurrent callers (e.g. a mount effect priming a session
+  // for photo uploads racing the submit-time withIdentity() call) each
+  // seeing "no session yet" and independently minting their own anonymous
+  // user. All concurrent calls await the same in-flight sign-in instead.
+  const signInInFlight = useRef<Promise<Session> | null>(null);
+
   /** Ensures an (anonymous, if needed) session exists. Does not mint a handle. */
   const ensureSession = useCallback(async (): Promise<Session> => {
     const { data: existing } = await supabase.auth.getSession();
     if (existing.session) return existing.session;
-    const { data, error } = await supabase.auth.signInAnonymously();
-    if (error || !data.session) throw error ?? new Error("Sign-in failed");
-    setSession(data.session);
-    return data.session;
+
+    if (!signInInFlight.current) {
+      signInInFlight.current = (async () => {
+        try {
+          const { data, error } = await supabase.auth.signInAnonymously();
+          if (error || !data.session) throw error ?? new Error("Sign-in failed");
+          setSession(data.session);
+          return data.session;
+        } finally {
+          signInInFlight.current = null;
+        }
+      })();
+    }
+    return signInInFlight.current;
   }, []);
 
   /**
