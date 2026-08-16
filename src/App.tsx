@@ -1,0 +1,41 @@
+import { Route, Routes, useLocation } from "react-router-dom";
+import { BottomNav } from "./components/layout/BottomNav";
+import { OfflineBanner } from "./components/layout/OfflineBanner";
+import { Home } from "./routes/Home";
+import { Search } from "./routes/Search";
+import { ToiletDetail } from "./routes/ToiletDetail";
+import { AddPhotosOnly } from "./routes/AddPhotosOnly";
+import { AddToiletWizard } from "./routes/add/AddToiletWizard";
+import { You } from "./routes/You";
+import { SaveHandle } from "./routes/SaveHandle";
+import { Settings } from "./routes/Settings";
+import { Saved } from "./routes/Saved";
+import { AuthCallback } from "./routes/AuthCallback";
+import { AdminDashboard } from "./routes/admin/AdminDashboard";
+
+const TAB_ROUTES = new Set(["/", "/saved", "/you"]);
+
+export default function App() {
+  const location = useLocation();
+  const showNav = TAB_ROUTES.has(location.pathname);
+
+  return (
+    <div className="app-shell">
+      <OfflineBanner />
+      <Routes>
+        <Route path="/" element={<Home />} />
+        <Route path="/search" element={<Search />} />
+        <Route path="/saved" element={<Saved />} />
+        <Route path="/t/:id" element={<ToiletDetail />} />
+        <Route path="/t/:id/add-photos" element={<AddPhotosOnly />} />
+        <Route path="/add" element={<AddToiletWizard />} />
+        <Route path="/you" element={<You />} />
+        <Route path="/you/save-handle" element={<SaveHandle />} />
+        <Route path="/settings" element={<Settings />} />
+        <Route path="/auth/callback" element={<AuthCallback />} />
+        <Route path="/admin" element={<AdminDashboard />} />
+      </Routes>
+      {showNav && <BottomNav />}
+    </div>
+  );
+}
