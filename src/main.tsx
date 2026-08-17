@@ -4,6 +4,7 @@ import { BrowserRouter } from "react-router-dom";
 import "./styles/global.css";
 import App from "./App";
 import { IdentityGateProvider } from "./components/IdentityGateProvider";
+import "./registerSW";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

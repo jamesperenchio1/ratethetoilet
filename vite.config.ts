@@ -41,6 +41,10 @@ export default defineConfig({
     maplibreWorkerAssets(),
     VitePWA({
       registerType: "autoUpdate",
+      // Registered manually from src/registerSW.ts — the default injected script
+      // only registers the worker and never reloads open tabs when a new one
+      // takes over, so deploys could sit uninstalled in an open tab indefinitely.
+      injectRegister: false,
       includeAssets: ["favicon.svg"],
       manifest: {
         name: "RateTheToilet",
