@@ -7,7 +7,7 @@ import { VENUE_LABELS } from "../lib/labels";
 import { ScoreBadge } from "../components/toilet/ScoreBadge";
 import type { Toilet, Review } from "../lib/types";
 
-const NUDGE_DISMISSED_KEY = "hongnam:nudge-dismissed";
+const NUDGE_DISMISSED_KEY = "ratethetoilet:nudge-dismissed";
 
 export function You() {
   const navigate = useNavigate();

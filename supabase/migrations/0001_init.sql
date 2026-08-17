@@ -1,4 +1,4 @@
--- Hongnam schema: handle-as-primary-key identity model (see wireframe thread 2a),
+-- RateTheToilet schema: handle-as-primary-key identity model (see wireframe thread 2a),
 -- toilets/photos/reviews content, and a moderation report queue.
 -- Applied to the self-hosted Supabase Postgres instance on 192.168.1.102.
 

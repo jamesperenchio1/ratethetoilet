@@ -83,7 +83,7 @@ export function Settings() {
           <span style={{ fontSize: 11, color: "var(--text-muted)" }}>Metres</span>
         </div>
         <div className="box" style={{ flexDirection: "row", justifyContent: "space-between" }}>
-          <span>Install Hongnam</span>
+          <span>Install RateTheToilet</span>
           <span style={{ fontSize: 11, color: "var(--chart-4)" }}>Add to home screen</span>
         </div>
 

@@ -10,8 +10,8 @@ export default defineConfig({
       registerType: "autoUpdate",
       includeAssets: ["favicon.svg"],
       manifest: {
-        name: "Hongnam",
-        short_name: "Hongnam",
+        name: "RateTheToilet",
+        short_name: "RateTheToilet",
         description: "Find a public toilet you can trust.",
         theme_color: "#0e1419",
         background_color: "#eae6d9",

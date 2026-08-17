@@ -1,4 +1,4 @@
-# Hongnam
+# RateTheToilet
 
 A crowdsourced public-toilet-finder PWA (Bangkok-focused — "hongnam" = ห้องน้ำ, Thai
 for restroom). Implemented from the `Hongnam Wireframes.dc.html` design doc.
@@ -22,7 +22,7 @@ implementation, and the design doc's thread `2a` for the full spec.
   `@supabase/supabase-js`. Deployed on Vercel, auto-deploying from `main`.
 - **Backend**: self-hosted Supabase (Postgres + Auth + PostgREST + Storage),
   running on a home server via Docker Compose, exposed through an existing
-  Cloudflare Tunnel at `hongnam-api.gingerbrosshop.com`.
+  Cloudflare Tunnel at `ratethetoilet-api.gingerbrosshop.com`.
 
 ## Local development
 
@@ -34,7 +34,7 @@ npm run dev
 
 ## Backend
 
-The self-hosted Supabase stack lives at `/opt/hongnam-supabase/docker` on the
+The self-hosted Supabase stack lives at `/opt/ratethetoilet-supabase/docker` on the
 home server (a sparse checkout of `supabase/supabase`'s `docker/` folder, kept
 out of this repo). The schema/RLS this app depends on is versioned here at
 `supabase/migrations/0001_init.sql` — apply it with:
