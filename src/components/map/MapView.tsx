@@ -1,7 +1,13 @@
 import { useEffect, useRef } from "react";
-import { Map as MaplibreMap, Marker } from "maplibre-gl";
+import { Map as MaplibreMap, Marker, setWorkerUrl } from "maplibre-gl";
+import maplibreWorkerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?url";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { scoreColor } from "../../lib/score";
+
+// maplibre-gl resolves its worker via `new URL("./maplibre-gl-worker.mjs", import.meta.url)`,
+// which points at our bundle's own URL once bundled, not the package's dist folder — 404s in
+// production. Point it at Vite's resolved (hashed, correctly-copied) asset URL instead.
+setWorkerUrl(maplibreWorkerUrl);
 
 export interface MapPin {
   id: string;
