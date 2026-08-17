@@ -1,11 +1,44 @@
-import { defineConfig } from "vite";
+import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
+import { copyFileSync, mkdirSync, readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const rootDir = dirname(fileURLToPath(import.meta.url));
+
+// maplibre-gl's worker script imports a sibling chunk ("./maplibre-gl-shared.mjs")
+// by its exact, unhashed dist filename. Vite's normal asset pipeline (and even a
+// `?url` import) would rename/hash that sibling, breaking the worker's relative
+// import at runtime. Instead, copy both files verbatim — same names, same
+// directory — so the worker's hardcoded import keeps resolving, in both dev and
+// build. Served at a fixed path; see setWorkerUrl() in MapView.tsx.
+function maplibreWorkerAssets(): Plugin {
+  const files = ["maplibre-gl-worker.mjs", "maplibre-gl-shared.mjs"];
+  const srcDir = resolve(rootDir, "node_modules/maplibre-gl/dist");
+  return {
+    name: "maplibre-worker-assets",
+    configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        const file = files.find((f) => req.url === `/maplibre-assets/${f}`);
+        if (!file) return next();
+        res.setHeader("Content-Type", "text/javascript");
+        res.end(readFileSync(resolve(srcDir, file)));
+      });
+    },
+    closeBundle() {
+      const outDir = resolve(rootDir, "dist/maplibre-assets");
+      mkdirSync(outDir, { recursive: true });
+      for (const f of files) copyFileSync(resolve(srcDir, f), resolve(outDir, f));
+    },
+  };
+}
 
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [
     react(),
+    maplibreWorkerAssets(),
     VitePWA({
       registerType: "autoUpdate",
       includeAssets: ["favicon.svg"],
