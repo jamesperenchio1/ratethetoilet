@@ -9,7 +9,7 @@ export function RateLimited({ retryAt }: { retryAt: string | null }) {
   return (
     <div className="screen-body">
       <div className="note">
-        <b>Slow down a moment — three toilets an hour.</b>
+        <b>Slow down a moment — ten toilets an hour.</b>
         <br />
         You can post again at <span className="num">{timeLabel}</span>.
       </div>

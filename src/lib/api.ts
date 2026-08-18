@@ -175,12 +175,23 @@ export async function fileReport(
   return data as Report;
 }
 
+export interface ReviewWithToilet extends Review {
+  toilet: Pick<Toilet, "id" | "venue_name" | "venue_type"> | null;
+}
+
 export async function myContributions(authorId: string) {
   const [{ data: toilets }, { data: reviews }] = await Promise.all([
     supabase.from("toilets").select("*").eq("author_id", authorId),
-    supabase.from("reviews").select("*").eq("author_id", authorId),
+    supabase
+      .from("reviews")
+      .select("*, toilet:toilets(id, venue_name, venue_type)")
+      .eq("author_id", authorId)
+      .order("created_at", { ascending: false }),
   ]);
-  return { toilets: (toilets ?? []) as Toilet[], reviews: (reviews ?? []) as Review[] };
+  return {
+    toilets: (toilets ?? []) as Toilet[],
+    reviews: (reviews ?? []) as unknown as ReviewWithToilet[],
+  };
 }
 
 // --- Admin ---

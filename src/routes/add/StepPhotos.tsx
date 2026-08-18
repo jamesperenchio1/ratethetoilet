@@ -43,12 +43,17 @@ function Thumb({ photo, onClick }: { photo: PendingPhoto; onClick: () => void })
         <span
           style={{
             position: "absolute",
-            inset: 0,
+            right: 2,
+            bottom: 2,
+            width: 14,
+            height: 14,
+            borderRadius: "50%",
+            background: "rgba(255,255,255,.9)",
+            border: "1px solid var(--border-strong)",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            fontSize: 11,
-            background: "rgba(255,255,255,.6)",
+            fontSize: 9,
           }}
         >
           …
@@ -110,7 +115,14 @@ export function StepPhotos({
       const path = await uploadDraftPhoto(draft.draftId, localId, file);
       updatePhoto(localId, { storagePath: path, status: "done" });
     } catch {
-      updatePhoto(localId, { status: "error" });
+      // One retry — a single flaky mobile request shouldn't flip a fine photo to "failed".
+      try {
+        await new Promise((r) => setTimeout(r, 1200));
+        const path = await uploadDraftPhoto(draft.draftId, localId, file);
+        updatePhoto(localId, { storagePath: path, status: "done" });
+      } catch {
+        updatePhoto(localId, { status: "error" });
+      }
     }
   }
 

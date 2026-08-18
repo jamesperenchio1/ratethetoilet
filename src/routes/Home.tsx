@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { MapView, locateDevice } from "../components/map/MapView";
 import { ToiletCard } from "../components/toilet/ToiletCard";
@@ -8,22 +8,42 @@ import type { Toilet } from "../lib/types";
 
 const BANGKOK = { lat: 13.7563, lng: 100.5018 };
 
+// Fixed 3km is often empty in lightly-mapped areas even when a closer-than-you'd-
+// think toilet exists further out — widen the search instead of giving up.
+const SEARCH_RADII_M = [3000, 15000, 60000];
+
 interface Filters {
   freeOnly: boolean;
   wheelchairOnly: boolean;
   minScore: number;
 }
 
+const SHEET_PEEK = 132;
+
 export function Home() {
   const navigate = useNavigate();
   const [center, setCenter] = useState(BANGKOK);
   const [toilets, setToilets] = useState<Toilet[] | null>(null);
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [sheetExpanded, setSheetExpanded] = useState(false);
+  const dragStartY = useRef<number | null>(null);
   const [filters, setFilters] = useState<Filters>({
     freeOnly: false,
     wheelchairOnly: false,
     minScore: 0,
   });
+
+  useEffect(() => {
+    function onPointerUp(e: PointerEvent) {
+      if (dragStartY.current == null) return;
+      const delta = e.clientY - dragStartY.current;
+      dragStartY.current = null;
+      if (delta < -30) setSheetExpanded(true);
+      else if (delta > 30) setSheetExpanded(false);
+    }
+    window.addEventListener("pointerup", onPointerUp);
+    return () => window.removeEventListener("pointerup", onPointerUp);
+  }, []);
 
   useEffect(() => {
     locateDevice()
@@ -35,9 +55,17 @@ export function Home() {
 
   useEffect(() => {
     let cancelled = false;
-    listToiletsNear(center, 3000).then((rows) => {
-      if (!cancelled) setToilets(rows);
-    });
+    (async () => {
+      for (const radius of SEARCH_RADII_M) {
+        const rows = await listToiletsNear(center, radius);
+        if (cancelled) return;
+        const isLastAttempt = radius === SEARCH_RADII_M[SEARCH_RADII_M.length - 1];
+        if (rows.length > 0 || isLastAttempt) {
+          setToilets(rows);
+          return;
+        }
+      }
+    })();
     return () => {
       cancelled = true;
     };
@@ -69,83 +97,150 @@ export function Home() {
 
   return (
     <>
-      <div className="topbar">
-        <span
-          style={{
-            flex: 1,
-            border: "1.5px solid var(--border-strong)",
-            borderRadius: 4,
-            padding: "6px 9px",
-            fontSize: 13,
-            color: "var(--text-muted)",
-            cursor: "text",
-          }}
-          onClick={() => navigate("/search")}
-        >
-          Search a place or venue
-        </span>
-      </div>
-
-      <div style={{ display: "flex", gap: 6, padding: "8px 10px 0", overflowX: "auto" }}>
-        <span
-          className={`chip ${filters.freeOnly ? "on" : ""}`}
-          onClick={() => setFilters((f) => ({ ...f, freeOnly: !f.freeOnly }))}
-        >
-          Free
-        </span>
-        <span
-          className={`chip ${filters.wheelchairOnly ? "on" : ""}`}
-          onClick={() => setFilters((f) => ({ ...f, wheelchairOnly: !f.wheelchairOnly }))}
-        >
-          Wheelchair
-        </span>
-        <span
-          className={`chip ${filters.minScore >= 80 ? "on" : ""}`}
-          onClick={() => setFiltersOpen(true)}
-        >
-          Filters
-        </span>
-      </div>
-
-      <div style={{ flex: "0 0 220px", position: "relative", margin: "8px 10px 0" }}>
+      <div style={{ position: "relative", flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
         <MapView
           pins={pins}
           center={center}
           onPinClick={(id) => navigate(`/t/${id}`)}
           onGpsClick={() => locateDevice().then(setCenter).catch(() => {})}
-          className="map"
         />
-        <span
-          onClick={() => navigate("/add")}
+
+        <div
           style={{
             position: "absolute",
-            right: 8,
-            bottom: 8,
-            background: "var(--surface-accent)",
-            color: "#fff",
-            borderRadius: 999,
-            padding: "8px 14px",
+            top: 8,
+            left: 8,
+            right: 64,
+            background: "var(--surface-card)",
+            border: "1.5px solid var(--border-strong)",
+            borderRadius: 4,
+            padding: "8px 10px",
             fontSize: 13,
-            cursor: "pointer",
-            zIndex: 2,
+            color: "var(--text-muted)",
+            cursor: "text",
+            boxShadow: "0 1px 4px rgba(0,0,0,.15)",
+            zIndex: 3,
+          }}
+          onClick={() => navigate("/search")}
+        >
+          Search a place or venue
+        </div>
+
+        <div style={{ position: "absolute", top: 50, left: 8, right: 8, display: "flex", gap: 6, overflowX: "auto", zIndex: 3 }}>
+          <span
+            className={`chip ${filters.freeOnly ? "on" : ""}`}
+            style={{ boxShadow: "0 1px 3px rgba(0,0,0,.15)" }}
+            onClick={() => setFilters((f) => ({ ...f, freeOnly: !f.freeOnly }))}
+          >
+            Free
+          </span>
+          <span
+            className={`chip ${filters.wheelchairOnly ? "on" : ""}`}
+            style={{ boxShadow: "0 1px 3px rgba(0,0,0,.15)" }}
+            onClick={() => setFilters((f) => ({ ...f, wheelchairOnly: !f.wheelchairOnly }))}
+          >
+            Wheelchair
+          </span>
+          <span
+            className={`chip ${filters.minScore >= 80 ? "on" : ""}`}
+            style={{ boxShadow: "0 1px 3px rgba(0,0,0,.15)" }}
+            onClick={() => setFiltersOpen(true)}
+          >
+            Filters
+          </span>
+        </div>
+
+        {!sheetExpanded && (
+          <span
+            onClick={() => navigate("/add")}
+            style={{
+              position: "absolute",
+              right: 8,
+              bottom: SHEET_PEEK + 10,
+              background: "var(--surface-accent)",
+              color: "#fff",
+              borderRadius: 999,
+              padding: "8px 14px",
+              fontSize: 13,
+              cursor: "pointer",
+              boxShadow: "0 1px 4px rgba(0,0,0,.25)",
+              zIndex: 3,
+            }}
+          >
+            + Add
+          </span>
+        )}
+
+        <div
+          style={{
+            position: "absolute",
+            left: 0,
+            right: 0,
+            bottom: 0,
+            height: sheetExpanded ? "72vh" : SHEET_PEEK,
+            transition: "height .25s ease",
+            background: "var(--surface-card)",
+            borderTop: "2px solid var(--border-strong)",
+            borderRadius: "10px 10px 0 0",
+            boxShadow: "0 -2px 8px rgba(0,0,0,.15)",
+            display: "flex",
+            flexDirection: "column",
+            overflow: "hidden",
+            zIndex: 4,
           }}
         >
-          + Add
-        </span>
-      </div>
-
-      <div className="screen-body" style={{ paddingTop: 10 }}>
-        {toilets && withDistance.length === 0 && (
-          <div className="center-empty">
-            <b style={{ color: "var(--text-primary)" }}>Nobody has mapped this area yet.</b>
-            <button className="btn" style={{ width: "auto", padding: "11px 20px" }} onClick={() => navigate("/add")}>
-              Add the first toilet here
-            </button>
+          <div
+            style={{ display: "flex", flexDirection: "column", cursor: "pointer", touchAction: "none" }}
+            onPointerDown={(e) => {
+              dragStartY.current = e.clientY;
+            }}
+            onClick={() => setSheetExpanded((v) => !v)}
+          >
+            <span className="grab" style={{ marginTop: 8 }} />
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                padding: "6px 12px 4px",
+                fontSize: 12,
+              }}
+            >
+              <b>
+                {toilets == null
+                  ? "Looking nearby…"
+                  : `${withDistance.length} nearby`}
+              </b>
+              <span style={{ color: "var(--chart-4)" }}>{sheetExpanded ? "Show map" : "See list"}</span>
+            </div>
           </div>
-        )}
-        {withDistance.map(({ t, d }) => (
-          <ToiletCard key={t.id} toilet={t} distanceMeters={d} />
-        ))}
+
+          <div className="screen-body" style={{ paddingTop: 2 }}>
+            {toilets && withDistance.length === 0 && toilets.length === 0 && (
+              <div className="center-empty">
+                <b style={{ color: "var(--text-primary)" }}>Nobody has mapped this area yet.</b>
+                <button className="btn" style={{ width: "auto", padding: "11px 20px" }} onClick={() => navigate("/add")}>
+                  Add the first toilet here
+                </button>
+              </div>
+            )}
+            {toilets && withDistance.length === 0 && toilets.length > 0 && (
+              <div className="center-empty">
+                <b style={{ color: "var(--text-primary)" }}>No toilets match your filters.</b>
+                <button
+                  className="btn2"
+                  style={{ width: "auto", padding: "11px 20px" }}
+                  onClick={() => setFilters({ freeOnly: false, wheelchairOnly: false, minScore: 0 })}
+                >
+                  Clear filters
+                </button>
+              </div>
+            )}
+            {withDistance.map(({ t, d }) => (
+              <ToiletCard key={t.id} toilet={t} distanceMeters={d} />
+            ))}
+          </div>
+        </div>
       </div>
 
       {filtersOpen && (
