@@ -2,7 +2,9 @@ import type { AccessType, TriState, VenueType } from "../../lib/types";
 
 export interface PendingPhoto {
   localId: string;
-  file: File;
+  // Absent after a draft is restored from persisted storage (File objects
+  // can't survive serialization) — the storagePath is used for preview instead.
+  file: File | null;
   storagePath: string | null;
   status: "uploading" | "done" | "error";
 }
@@ -13,16 +15,19 @@ export interface ToiletDraft {
   lat: number | null;
   lng: number | null;
   locationSource: "gps" | "search" | "manual" | null;
+  venueName: string | null;
   venueType: VenueType | null;
   accessType: AccessType | null;
   supplies: string[];
   wheelchair: TriState | null;
-  cleanliness: number | null;
-  smell: number | null;
-  privacy: number | null;
+  cleanliness: number;
+  smell: number;
+  privacy: number;
   hintChips: string[];
   hintNote: string;
 }
+
+export const DEFAULT_SCORE = 50;
 
 export function emptyDraft(): ToiletDraft {
   return {
@@ -31,13 +36,14 @@ export function emptyDraft(): ToiletDraft {
     lat: null,
     lng: null,
     locationSource: null,
+    venueName: null,
     venueType: null,
     accessType: null,
     supplies: [],
     wheelchair: null,
-    cleanliness: null,
-    smell: null,
-    privacy: null,
+    cleanliness: DEFAULT_SCORE,
+    smell: DEFAULT_SCORE,
+    privacy: DEFAULT_SCORE,
     hintChips: [],
     hintNote: "",
   };

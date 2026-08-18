@@ -1,7 +1,17 @@
 import type { Dispatch, SetStateAction } from "react";
 import type { ToiletDraft } from "./types";
 
-const HINT_CHIPS = ["Ask staff", "Behind the building", "Upstairs", "No sign", "Round the back"];
+// Wayfinding facts only — anything about payment or asking someone for access
+// already belongs to the Access step, not here.
+const HINT_CHIPS = [
+  "Round the back",
+  "Behind the building",
+  "Upstairs",
+  "Downstairs",
+  "No sign",
+  "Easy to miss",
+  "Near the entrance",
+];
 
 export function StepHint({
   draft,
@@ -31,9 +41,14 @@ export function StepHint({
         <i className="done" />
       </div>
 
-      <div className="ann">Skip it if you're not sure — someone else can add it later.</div>
+      <div className="lbl">Bonus · finding it</div>
+      <div className="ann">
+        The rating's done — this part just helps the next person actually find the door. Skip it if
+        you're not sure; anyone can add their own tip later, so a couple of different notes here isn't
+        a conflict, it's just more coverage.
+      </div>
 
-      <div className="lbl">Tap what applies</div>
+      <div className="lbl">Tap what applies (pick any, or none)</div>
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
         {HINT_CHIPS.map((c) => (
           <span key={c} className={`chip ${draft.hintChips.includes(c) ? "on" : ""}`} onClick={() => toggleChip(c)}>
@@ -42,7 +57,10 @@ export function StepHint({
         ))}
       </div>
 
-      <div className="lbl">Add a line (optional)</div>
+      <div className="lbl">Directions in your own words (optional)</div>
+      <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: -6 }}>
+        Whatever you'd tell a friend standing where you are now.
+      </div>
       <textarea
         className="note"
         style={{ minHeight: 82, border: "1.5px solid var(--border-note)", resize: "none" }}

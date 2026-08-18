@@ -5,6 +5,7 @@ import { useIdentity } from "../../components/IdentityGateProvider";
 import { canPost, createToilet, attachDraftPhotos, type NewToiletInput } from "../../lib/api";
 import { enqueuePost } from "../../lib/offlineQueue";
 import { emptyDraft, type ToiletDraft } from "./types";
+import { saveWizardState, loadWizardState, clearWizardState, type PersistableStep } from "./persist";
 import type { Toilet } from "../../lib/types";
 import { StepPhotos } from "./StepPhotos";
 import { StepLocation } from "./StepLocation";
@@ -14,13 +15,13 @@ import { StepHint } from "./StepHint";
 import { Posted } from "./Posted";
 import { RateLimited } from "./RateLimited";
 
-type Step = "photos" | "location" | "venue" | "scores" | "hint" | "posted" | "rate-limited";
+type Step = PersistableStep | "posted" | "rate-limited";
 const STEP_LABELS: Partial<Record<Step, string>> = {
   photos: "1/5",
   location: "2/5",
   venue: "3/5",
   scores: "4/5",
-  hint: "5/5 · optional",
+  hint: "Bonus · optional",
 };
 
 function draftToInput(draft: ToiletDraft): NewToiletInput {
@@ -29,6 +30,7 @@ function draftToInput(draft: ToiletDraft): NewToiletInput {
     lng: draft.lng!,
     venue_type: draft.venueType!,
     access_type: draft.accessType!,
+    venue_name: draft.venueName?.trim() || null,
     supplies: draft.supplies,
     wheelchair: draft.wheelchair,
     hint_chips: draft.hintChips,
@@ -43,8 +45,9 @@ function draftToInput(draft: ToiletDraft): NewToiletInput {
 export function AddToiletWizard() {
   const navigate = useNavigate();
   const { withIdentity, ensureSession, profile } = useIdentity();
-  const [draft, setDraft] = useState<ToiletDraft>(emptyDraft());
-  const [step, setStep] = useState<Step>("photos");
+  const restored = loadWizardState();
+  const [draft, setDraft] = useState<ToiletDraft>(restored?.draft ?? emptyDraft());
+  const [step, setStep] = useState<Step>(restored?.step ?? "photos");
   const [posted, setPosted] = useState<Toilet | null>(null);
   const [retryAt, setRetryAt] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -56,7 +59,15 @@ export function AddToiletWizard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  useEffect(() => {
+    // Autosave so an accidental back-swipe (or tab reload) doesn't wipe the draft —
+    // only the in-progress steps are worth persisting, not the terminal screens.
+    if (step === "posted" || step === "rate-limited") return;
+    saveWizardState(step, draft);
+  }, [step, draft]);
+
   function reset() {
+    clearWizardState();
     setDraft(emptyDraft());
     setPosted(null);
     setStep("photos");
@@ -76,6 +87,7 @@ export function AddToiletWizard() {
 
       if (!navigator.onLine && profile) {
         await enqueuePost("toilet", draftToInput(draft));
+        clearWizardState();
         navigate("/");
         return;
       }
@@ -98,6 +110,7 @@ export function AddToiletWizard() {
         }
         throw err;
       }
+      clearWizardState();
       setPosted(newToilet);
       setStep("posted");
     } finally {

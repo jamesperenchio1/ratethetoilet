@@ -9,8 +9,8 @@ function Slider({
   onChange,
 }: {
   label: string;
-  value: number | null;
-  onChange: (v: number | null) => void;
+  value: number;
+  onChange: (v: number) => void;
 }) {
   return (
     <>
@@ -19,11 +19,11 @@ function Slider({
         type="range"
         min={0}
         max={100}
-        value={value ?? 0}
+        value={value}
         onChange={(e) => onChange(Number(e.target.value))}
       />
       <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
-        {value == null ? "Not rated — leave it if you didn't check" : `${value} · ${scoreLabel(value)}`}
+        {value} · {scoreLabel(value)}
       </div>
     </>
   );
@@ -57,6 +57,8 @@ export function StepScores({
         </span>
         <span style={{ fontSize: 12 }}>{scoreLabel(overall)}</span>
       </div>
+
+      <div className="ann">Sliders start at 50 — drag toward great or toward avoid.</div>
 
       <Slider
         label="Cleanliness"
