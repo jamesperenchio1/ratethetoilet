@@ -35,6 +35,19 @@ export function StepVenue({
         <i />
       </div>
 
+      <div className="lbl">Place name</div>
+      <input
+        value={draft.venueName ?? ""}
+        onChange={(e) => onChange((prev) => ({ ...prev, venueName: e.target.value }))}
+        placeholder="e.g. Amazon café, Mu 2"
+        style={{
+          border: "1.5px solid var(--border-strong)",
+          borderRadius: 4,
+          padding: "8px 9px",
+          fontSize: 13,
+        }}
+      />
+
       <div className="lbl">Venue</div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6 }}>
         {VENUES.map((v) => (
