@@ -1,17 +1,13 @@
-export type VenueType =
-  | "mall"
-  | "gas"
-  | "temple"
-  | "transit"
-  | "public"
-  | "cafe"
-  | "hotel"
-  | "street"
-  | "other";
-
 export type AccessType = "free" | "paid" | "customers_only" | "ask_for_key";
 
 export type TriState = "yes" | "no" | "unsure";
+
+/** A venue-type catalog entry (base types seeded; custom ones user-added). */
+export interface VenueTypeDef {
+  key: string;
+  label: string;
+  is_custom: boolean;
+}
 
 export interface Profile {
   id: string;
@@ -26,8 +22,8 @@ export interface Toilet {
   author_id: string;
   lat: number;
   lng: number;
-  venue_type: VenueType;
-  access_type: AccessType;
+  venue_types: string[];
+  access_types: string[];
   supplies: string[];
   wheelchair: TriState | null;
   hint_chips: string[];

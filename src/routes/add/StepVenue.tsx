@@ -1,14 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
-import type { AccessType, VenueType } from "../../lib/types";
-import { ACCESS_LABELS, VENUE_LABELS } from "../../lib/labels";
+import { ACCESS_LABELS, venueTypeLabel } from "../../lib/labels";
 import { CONFIG } from "../../lib/config";
-import { searchVenues } from "../../lib/api";
-import type { Venue } from "../../lib/types";
+import { listVenueTypes, findOrCreateVenueType, searchVenues } from "../../lib/api";
+import type { Venue, VenueTypeDef } from "../../lib/types";
 import { emptyFloorEntry, type ToiletDraft } from "./types";
 
-const VENUES = Object.keys(VENUE_LABELS) as VenueType[];
-const ACCESSES = Object.keys(ACCESS_LABELS) as AccessType[];
+const ACCESSES = Object.keys(ACCESS_LABELS);
 const SUPPLIES = CONFIG.wizard.supplies;
 const FLOOR_PRESETS = CONFIG.wizard.floorPresets;
 
@@ -21,10 +19,26 @@ export function StepVenue({
   onChange: Dispatch<SetStateAction<ToiletDraft>>;
   onNext: () => void;
 }) {
+  const [catalog, setCatalog] = useState<VenueTypeDef[]>([]);
   const [customFloor, setCustomFloor] = useState("");
   const [venueMatches, setVenueMatches] = useState<Venue[]>([]);
   const [searchingVenue, setSearchingVenue] = useState(false);
   const venueAbort = useRef<AbortController | null>(null);
+
+  const [customTypeOpen, setCustomTypeOpen] = useState(false);
+  const [customTypeValue, setCustomTypeValue] = useState("");
+  const [addingCustom, setAddingCustom] = useState(false);
+
+  useEffect(() => {
+    listVenueTypes()
+      .then(setCatalog)
+      .catch(() => {
+        // fall back to the base config keys so the picker still renders
+        setCatalog(
+          Object.keys(CONFIG.labels.venue).map((key) => ({ key, label: CONFIG.labels.venue[key], is_custom: false }))
+        );
+      });
+  }, []);
 
   // Debounced "is this an existing place?" lookup while the name is being
   // typed and we already know where the pin is.
@@ -52,6 +66,24 @@ export function StepVenue({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draft.venueName, draft.venueId, draft.lat, draft.lng]);
 
+  function toggleVenueType(key: string) {
+    onChange((prev) => ({
+      ...prev,
+      venueTypes: prev.venueTypes.includes(key)
+        ? prev.venueTypes.filter((k) => k !== key)
+        : [...prev.venueTypes, key],
+    }));
+  }
+
+  function toggleAccess(key: string) {
+    onChange((prev) => ({
+      ...prev,
+      accessTypes: prev.accessTypes.includes(key)
+        ? prev.accessTypes.filter((k) => k !== key)
+        : [...prev.accessTypes, key],
+    }));
+  }
+
   function toggleSupply(s: string) {
     onChange((prev) => ({
       ...prev,
@@ -59,6 +91,25 @@ export function StepVenue({
         ? prev.supplies.filter((x) => x !== s)
         : [...prev.supplies, s],
     }));
+  }
+
+  async function addCustomType() {
+    const label = customTypeValue.trim();
+    if (!label || addingCustom) return;
+    setAddingCustom(true);
+    try {
+      const key = await findOrCreateVenueType(label);
+      onChange((prev) => ({ ...prev, venueTypes: [...prev.venueTypes, key] }));
+      // Add to the local catalog so it renders as a chip immediately.
+      setCatalog((prev) => {
+        if (prev.some((v) => v.key === key)) return prev;
+        return [...prev, { key, label: venueTypeLabel(key), is_custom: true }];
+      });
+      setCustomTypeValue("");
+      setCustomTypeOpen(false);
+    } finally {
+      setAddingCustom(false);
+    }
   }
 
   function setVenueName(name: string) {
@@ -139,25 +190,49 @@ export function StepVenue({
       )}
 
       <div className="lbl">Venue</div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6 }}>
-        {VENUES.map((v) => (
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+        {catalog.map((v) => (
           <span
-            key={v}
-            className={`btn2 ${draft.venueType === v ? "selected" : ""}`}
-            onClick={() => onChange((prev) => ({ ...prev, venueType: v }))}
+            key={v.key}
+            className={`chip ${draft.venueTypes.includes(v.key) ? "on" : ""}`}
+            onClick={() => toggleVenueType(v.key)}
           >
-            {VENUE_LABELS[v]}
+            {v.label}
           </span>
         ))}
+        <span className={`chip ${customTypeOpen ? "on" : ""}`} onClick={() => setCustomTypeOpen((o) => !o)}>
+          + Other
+        </span>
       </div>
+      {customTypeOpen && (
+        <div style={{ display: "flex", gap: 6 }}>
+          <input
+            autoFocus
+            className="box"
+            style={{ flex: 1 }}
+            value={customTypeValue}
+            onChange={(e) => setCustomTypeValue(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && addCustomType()}
+            placeholder="e.g. Coworking space, Beach, Hospital…"
+          />
+          <button
+            className="btn2"
+            style={{ width: "auto", padding: "8px 12px" }}
+            disabled={!customTypeValue.trim() || addingCustom}
+            onClick={addCustomType}
+          >
+            {addingCustom ? "…" : "Add"}
+          </button>
+        </div>
+      )}
 
       <div className="lbl">Access</div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
         {ACCESSES.map((a) => (
           <span
             key={a}
-            className={`btn2 ${draft.accessType === a ? "selected" : ""}`}
-            onClick={() => onChange((prev) => ({ ...prev, accessType: a }))}
+            className={`chip ${draft.accessTypes.includes(a) ? "on" : ""}`}
+            onClick={() => toggleAccess(a)}
           >
             {ACCESS_LABELS[a]}
           </span>
@@ -248,7 +323,7 @@ export function StepVenue({
       <button
         className="btn"
         style={{ marginTop: "auto" }}
-        disabled={!draft.venueType || !draft.accessType}
+        disabled={draft.venueTypes.length === 0 || draft.accessTypes.length === 0}
         onClick={onNext}
       >
         Next

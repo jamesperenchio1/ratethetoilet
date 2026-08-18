@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { searchToilets } from "../lib/api";
 import type { Toilet } from "../lib/types";
-import { ACCESS_LABELS, VENUE_LABELS } from "../lib/labels";
+import { accessTypesLabel, venueTypesLabel } from "../lib/labels";
 import { get, set } from "idb-keyval";
 import { CONFIG } from "../lib/config";
 
@@ -78,9 +78,9 @@ export function Search() {
                 onClick={() => navigate(`/t/${t.id}`)}
                 style={{ cursor: "pointer" }}
               >
-                {t.venue_name || VENUE_LABELS[t.venue_type]}
+                {t.venue_name || venueTypesLabel(t.venue_types) || "Toilet"}
                 <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
-                  {VENUE_LABELS[t.venue_type]} · {ACCESS_LABELS[t.access_type]}
+                  {venueTypesLabel(t.venue_types)} · {accessTypesLabel(t.access_types)}
                 </span>
               </div>
             ))}

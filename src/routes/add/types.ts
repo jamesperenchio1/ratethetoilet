@@ -1,4 +1,4 @@
-import type { AccessType, TriState, VenueType } from "../../lib/types";
+import type { TriState } from "../../lib/types";
 import { CONFIG } from "../../lib/config";
 
 export interface PendingPhoto {
@@ -22,6 +22,7 @@ export interface FloorEntry {
   wheelchair: TriState | null;
   hintChips: string[];
   hintNote: string;
+  review: string;
 }
 
 export function emptyFloorEntry(floorLabel: string | null = null): FloorEntry {
@@ -36,6 +37,7 @@ export function emptyFloorEntry(floorLabel: string | null = null): FloorEntry {
     wheelchair: null,
     hintChips: [],
     hintNote: "",
+    review: "",
   };
 }
 
@@ -47,11 +49,11 @@ export interface ToiletDraft {
   lat: number | null;
   lng: number | null;
   locationSource: "gps" | "search" | "manual" | null;
-  venueType: VenueType | null;
+  venueTypes: string[];
   venueName: string | null;
   /** Resolved venue id (null = create a new venue on submit). */
   venueId: string | null;
-  accessType: AccessType | null;
+  accessTypes: string[];
   supplies: string[];
 }
 
@@ -64,10 +66,10 @@ export function emptyDraft(): ToiletDraft {
     lat: null,
     lng: null,
     locationSource: null,
-    venueType: null,
+    venueTypes: [],
     venueName: null,
     venueId: null,
-    accessType: null,
+    accessTypes: [],
     supplies: [],
   };
 }

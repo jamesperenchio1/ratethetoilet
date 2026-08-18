@@ -8,10 +8,10 @@ export type PersistableStep =
   | "location"
   | "venue"
   | "scores"
-  | "hint"
+  | "review"
   | "floor-photos"
   | "floor-scores"
-  | "floor-hint";
+  | "floor-review";
 
 /**
  * File objects can't survive JSON serialization, so uploaded photos are kept

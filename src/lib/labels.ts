@@ -1,8 +1,31 @@
-import type { AccessType, VenueType } from "./types";
 import { CONFIG } from "./config";
 
-export const VENUE_LABELS: Record<VenueType, string> = CONFIG.labels.venue;
-export const ACCESS_LABELS: Record<AccessType, string> = CONFIG.labels.access;
+export const VENUE_LABELS: Record<string, string> = CONFIG.labels.venue;
+export const ACCESS_LABELS: Record<string, string> = CONFIG.labels.access;
+
+export function titleCase(s: string): string {
+  return s.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+/** Display label for a venue-type key; unknown (custom) keys are title-cased. */
+export function venueTypeLabel(key: string): string {
+  return VENUE_LABELS[key] ?? titleCase(key);
+}
+
+export function accessTypeLabel(key: string): string {
+  return ACCESS_LABELS[key] ?? key;
+}
+
+/** "Mall · Café" from an array of keys. */
+export function venueTypesLabel(keys: string[] | undefined | null): string {
+  if (!keys || keys.length === 0) return "";
+  return keys.map(venueTypeLabel).join(" · ");
+}
+
+export function accessTypesLabel(keys: string[] | undefined | null): string {
+  if (!keys || keys.length === 0) return "";
+  return keys.map(accessTypeLabel).join(" · ");
+}
 
 export function distanceLabel(meters: number): string {
   if (meters < 1000) return `${Math.round(meters)} m`;

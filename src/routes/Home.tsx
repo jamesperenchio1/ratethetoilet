@@ -4,7 +4,7 @@ import { MapView, locateDevice } from "../components/map/MapView";
 import { ToiletCard } from "../components/toilet/ToiletCard";
 import { listToiletsNear } from "../lib/api";
 import { haversineMeters } from "../lib/labels";
-import { VENUE_LABELS } from "../lib/labels";
+import { venueTypesLabel } from "../lib/labels";
 import { groupToiletsByVenue, groupScore, type VenueGroup } from "../lib/venueGrouping";
 import { CONFIG } from "../lib/config";
 import type { Toilet } from "../lib/types";
@@ -39,7 +39,7 @@ function VenueGroupCard({ group, distanceMeters }: { group: VenueGroup; distance
         onClick={() => setOpen((o) => !o)}
       >
         <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
-          <b>{group.name || VENUE_LABELS[first.venue_type]}</b>
+          <b>{group.name || venueTypesLabel(first.venue_types) || "Toilet"}</b>
           <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
             {group.toilets.length} floor{group.toilets.length === 1 ? "" : "s"}
             {distanceMeters != null && ` · ${Math.round(distanceMeters)} m`}
@@ -119,7 +119,7 @@ export function Home() {
   const filtered = useMemo(() => {
     if (!toilets) return [];
     return toilets.filter((t) => {
-      if (filters.freeOnly && t.access_type !== "free") return false;
+      if (filters.freeOnly && !t.access_types.includes("free")) return false;
       if (filters.wheelchairOnly && t.wheelchair !== "yes") return false;
       if (
         filters.minScore > 0 &&
@@ -151,7 +151,7 @@ export function Home() {
 
   return (
     <>
-      <div style={{ position: "relative", flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+      <div className="home-map" style={{ position: "relative", flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
         <MapView
           pins={pins}
           center={center}
@@ -160,6 +160,7 @@ export function Home() {
         />
 
         <div
+          className="home-search"
           style={{
             position: "absolute",
             top: 8,
@@ -180,7 +181,7 @@ export function Home() {
           Search a place or venue
         </div>
 
-        <div style={{ position: "absolute", top: 50, left: 8, right: 8, display: "flex", gap: 6, overflowX: "auto", zIndex: 3 }}>
+        <div className="home-filters" style={{ position: "absolute", top: 50, left: 8, right: 8, display: "flex", gap: 6, overflowX: "auto", zIndex: 3 }}>
           <span
             className={`chip ${filters.freeOnly ? "on" : ""}`}
             style={{ boxShadow: "0 1px 3px rgba(0,0,0,.15)" }}
@@ -206,6 +207,7 @@ export function Home() {
 
         {!sheetExpanded && (
           <span
+            className="home-add"
             onClick={() => navigate("/add")}
             style={{
               position: "absolute",
@@ -226,6 +228,7 @@ export function Home() {
         )}
 
         <div
+          className="home-sheet"
           style={{
             position: "absolute",
             left: 0,

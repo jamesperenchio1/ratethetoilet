@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { TopBar } from "../../components/layout/TopBar";
 import { useIdentity } from "../../components/IdentityGateProvider";
-import { canPost, createToilet, attachDraftPhotos, findOrCreateVenue, type NewToiletInput } from "../../lib/api";
+import { canPost, createToilet, attachDraftPhotos, findOrCreateVenue, addReview, type NewToiletInput } from "../../lib/api";
 import { enqueuePost } from "../../lib/offlineQueue";
 import { emptyDraft, type FloorEntry, type ToiletDraft } from "./types";
 import { saveWizardState, loadWizardState, clearWizardState, type PersistableStep } from "./persist";
@@ -11,7 +11,7 @@ import { StepPhotos } from "./StepPhotos";
 import { StepLocation } from "./StepLocation";
 import { StepVenue } from "./StepVenue";
 import { StepScores } from "./StepScores";
-import { StepHint } from "./StepHint";
+import { StepReview } from "./StepReview";
 import { Posted } from "./Posted";
 import { RateLimited } from "./RateLimited";
 
@@ -21,16 +21,16 @@ const STEP_LABELS: Partial<Record<Step, string>> = {
   location: "2/5",
   venue: "3/5",
   scores: "4/5",
-  hint: "Bonus · optional",
+  review: "5/5",
 };
-const STEP_ORDER: PersistableStep[] = ["photos", "location", "venue", "scores", "hint"];
+const STEP_ORDER: PersistableStep[] = ["photos", "location", "venue", "scores", "review"];
 
 function entryToInput(draft: ToiletDraft, entry: FloorEntry, venueId: string | null): NewToiletInput {
   return {
     lat: draft.lat!,
     lng: draft.lng!,
-    venue_type: draft.venueType!,
-    access_type: draft.accessType!,
+    venue_types: draft.venueTypes,
+    access_types: draft.accessTypes,
     supplies: draft.supplies,
     wheelchair: entry.wheelchair,
     hint_chips: entry.hintChips,
@@ -103,16 +103,16 @@ export function AddToiletWizard() {
       setStep("floor-photos");
       return;
     }
-    if (step === "floor-hint") {
+    if (step === "floor-review") {
       setStep("floor-scores");
       return;
     }
     if (step === "floor-photos") {
       if (floorIdx === 0) {
-        setStep("hint");
+        setStep("review");
       } else {
         setFloorIdx((i) => i - 1);
-        setStep("floor-hint");
+        setStep("floor-review");
       }
       return;
     }
@@ -120,7 +120,7 @@ export function AddToiletWizard() {
     if (i > 0) setStep(STEP_ORDER[i - 1]);
   }
 
-  function handlePrimaryHintDone() {
+  function handlePrimaryReviewDone() {
     if (draft.multiFloor && draft.additionalFloors.length > 0) {
       setFloorIdx(0);
       setStep("floor-photos");
@@ -129,7 +129,7 @@ export function AddToiletWizard() {
     }
   }
 
-  function handleFloorHintDone() {
+  function handleFloorReviewDone() {
     if (floorIdx + 1 < draft.additionalFloors.length) {
       setFloorIdx((i) => i + 1);
       setStep("floor-photos");
@@ -153,8 +153,8 @@ export function AddToiletWizard() {
 
       const entries = [draft.primary, ...draft.additionalFloors];
 
-      // Offline: queue the whole batch with their photos + venue, so the flush
-      // can attach photos and resolve/create the venue when back online.
+      // Offline: queue the whole batch with their photos, review and venue, so
+      // the flush can attach everything when back online.
       if (!navigator.onLine) {
         const name = (draft.venueName ?? "").trim() || null;
         for (const entry of entries) {
@@ -168,6 +168,7 @@ export function AddToiletWizard() {
             venueName: name,
             lat: draft.lat!,
             lng: draft.lng!,
+            review: entry.review.trim() || null,
           });
         }
         clearWizardState();
@@ -199,6 +200,9 @@ export function AddToiletWizard() {
               .filter((ph) => ph.status === "done" && ph.storagePath)
               .map((ph) => ph.storagePath as string);
             await attachDraftPhotos(p.id, t.id, paths);
+            if (entry.review.trim()) {
+              await addReview(p.id, t.id, entry.review.trim());
+            }
             if (!firstToilet) firstToilet = t;
           } catch (err) {
             if (err instanceof Error && err.message.includes("rate_limit_exceeded")) {
@@ -291,13 +295,13 @@ export function AddToiletWizard() {
         <StepVenue draft={draft} onChange={setDraft} onNext={() => setStep("scores")} />
       )}
       {step === "scores" && (
-        <StepScores entry={draft.primary} onChangeEntry={updatePrimary} onNext={() => setStep("hint")} />
+        <StepScores entry={draft.primary} onChangeEntry={updatePrimary} onNext={() => setStep("review")} />
       )}
-      {step === "hint" && (
-        <StepHint
+      {step === "review" && (
+        <StepReview
           entry={draft.primary}
           onChangeEntry={updatePrimary}
-          onSubmit={handlePrimaryHintDone}
+          onSubmit={handlePrimaryReviewDone}
           submitLabel={
             draft.multiFloor && draft.additionalFloors.length > 0 ? "Next: add other floors" : undefined
           }
@@ -319,20 +323,20 @@ export function AddToiletWizard() {
         <StepScores
           entry={activeFloor}
           onChangeEntry={(fn) => updateFloor(floorIdx, fn)}
-          onNext={() => setStep("floor-hint")}
+          onNext={() => setStep("floor-review")}
           stepIndex={2}
           stepTotal={3}
           heading={`Floor ${activeFloor.floorLabel} · Scores`}
         />
       )}
-      {step === "floor-hint" && activeFloor && (
-        <StepHint
+      {step === "floor-review" && activeFloor && (
+        <StepReview
           entry={activeFloor}
           onChangeEntry={(fn) => updateFloor(floorIdx, fn)}
-          onSubmit={handleFloorHintDone}
+          onSubmit={handleFloorReviewDone}
           stepIndex={3}
           stepTotal={3}
-          heading={`Floor ${activeFloor.floorLabel} · Hint`}
+          heading={`Floor ${activeFloor.floorLabel} · Review`}
           submitLabel={floorIdx + 1 < draft.additionalFloors.length ? "Next floor" : "Post all toilets"}
           skipLabel={floorIdx + 1 < draft.additionalFloors.length ? "Skip — next floor" : "Skip — post all toilets"}
         />

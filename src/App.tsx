@@ -9,11 +9,10 @@ import { AddToiletWizard } from "./routes/add/AddToiletWizard";
 import { You } from "./routes/You";
 import { SaveHandle } from "./routes/SaveHandle";
 import { Settings } from "./routes/Settings";
-import { Saved } from "./routes/Saved";
 import { AuthCallback } from "./routes/AuthCallback";
 import { AdminDashboard } from "./routes/admin/AdminDashboard";
 
-const TAB_ROUTES = new Set(["/", "/saved", "/you"]);
+const TAB_ROUTES = new Set(["/", "/you"]);
 
 export default function App() {
   const location = useLocation();
@@ -25,7 +24,6 @@ export default function App() {
       <Routes>
         <Route path="/" element={<Home />} />
         <Route path="/search" element={<Search />} />
-        <Route path="/saved" element={<Saved />} />
         <Route path="/t/:id" element={<ToiletDetail />} />
         <Route path="/t/:id/add-photos" element={<AddPhotosOnly />} />
         <Route path="/add" element={<AddToiletWizard />} />

@@ -1,5 +1,3 @@
-import type { AccessType, VenueType } from "./types";
-
 /**
  * Single source of truth for every tunable constant in the app.
  *
@@ -15,6 +13,7 @@ import type { AccessType, VenueType } from "./types";
  *  - `api.postRateLimitPerHour` (10)  → supabase/migrations/0002_raise_rate_limit.sql
  *  - `venue.matchRadiusM` (100)       → supabase/migrations/0003_floor_and_venues.sql
  *  - `venue.lookupRadiusM` (500)      → supabase/migrations/0003_floor_and_venues.sql
+ *  - venue type seed                  → supabase/migrations/0004_venue_types_multiselect.sql
  */
 export const CONFIG = {
   map: {
@@ -64,14 +63,13 @@ export const CONFIG = {
       cafe: "Café",
       hotel: "Hotel",
       street: "Street",
-      other: "Other",
-    } as Record<VenueType, string>,
+    } as Record<string, string>,
     access: {
       free: "Free",
       paid: "Paid",
       customers_only: "Customers only",
       ask_for_key: "Ask for key",
-    } as Record<AccessType, string>,
+    } as Record<string, string>,
   },
 
   score: {
@@ -131,7 +129,6 @@ export const CONFIG = {
 
   storage: {
     draftKey: "toilet-draft:v1",
-    savedKey: "saved-toilets",
     recentsKey: "recent-searches",
     nudgeKey: "ratethetoilet:nudge-dismissed",
     queuePrefix: "queue:",

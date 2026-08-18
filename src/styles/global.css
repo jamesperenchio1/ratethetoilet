@@ -43,6 +43,31 @@ textarea {
   position: relative;
 }
 
+/* Wider screens: let the app scale up and the map be the hero. The nearby
+   list moves from a bottom sheet to a right-hand panel. */
+@media (min-width: 900px) {
+  .app-shell {
+    max-width: none;
+  }
+  .home-sheet {
+    left: auto !important;
+    right: 0 !important;
+    top: 0 !important;
+    bottom: 0 !important;
+    width: 380px !important;
+    height: 100% !important;
+    border-top: 0 !important;
+    border-left: 2px solid var(--border-strong) !important;
+    border-radius: 0 !important;
+    box-shadow: -2px 0 8px rgba(0, 0, 0, 0.15) !important;
+  }
+  .home-search,
+  .home-filters,
+  .home-add {
+    right: 388px !important;
+  }
+}
+
 .topbar {
   height: 52px;
   flex: none;

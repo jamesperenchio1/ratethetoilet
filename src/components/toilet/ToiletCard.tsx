@@ -1,7 +1,7 @@
 import { useNavigate } from "react-router-dom";
 import type { Toilet } from "../../lib/types";
 import { ScoreBadge } from "./ScoreBadge";
-import { ACCESS_LABELS, distanceLabel, VENUE_LABELS } from "../../lib/labels";
+import { accessTypesLabel, distanceLabel, venueTypesLabel } from "../../lib/labels";
 import { scoreLabel } from "../../lib/score";
 
 export function ToiletCard({
@@ -12,7 +12,7 @@ export function ToiletCard({
   distanceMeters?: number;
 }) {
   const navigate = useNavigate();
-  const title = toilet.venue_name || VENUE_LABELS[toilet.venue_type];
+  const title = toilet.venue_name || venueTypesLabel(toilet.venue_types) || "Toilet";
   return (
     <div className="box" onClick={() => navigate(`/t/${toilet.id}`)} style={{ cursor: "pointer" }}>
       <div style={{ display: "flex", justifyContent: "space-between" }}>
@@ -20,7 +20,7 @@ export function ToiletCard({
         <ScoreBadge score={toilet.overall_score} />
       </div>
       <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
-        {VENUE_LABELS[toilet.venue_type]} · {ACCESS_LABELS[toilet.access_type]}
+        {venueTypesLabel(toilet.venue_types)} · {accessTypesLabel(toilet.access_types)}
         {distanceMeters != null && <> · {distanceLabel(distanceMeters)}</>} ·{" "}
         {scoreLabel(toilet.overall_score)}
       </div>

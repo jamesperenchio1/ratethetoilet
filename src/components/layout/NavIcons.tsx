@@ -18,14 +18,6 @@ export function NearbyIcon() {
   );
 }
 
-export function SavedIcon() {
-  return (
-    <svg {...COMMON}>
-      <path d="M4.5 2.5h9a1 1 0 0 1 1 1v12l-5.5-3.4L3.5 15.5v-12a1 1 0 0 1 1-1Z" />
-    </svg>
-  );
-}
-
 export function AddIcon() {
   return (
     <svg {...COMMON}>
@@ -40,6 +32,40 @@ export function YouIcon() {
     <svg {...COMMON}>
       <circle cx="9" cy="5.8" r="2.8" />
       <path d="M3.2 15.3c.9-3 3-4.6 5.8-4.6s4.9 1.6 5.8 4.6" />
+    </svg>
+  );
+}
+
+export function PlusIcon({ size = 18 }: { size?: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 18 18"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+    >
+      <path d="M9 3v12M3 9h12" />
+    </svg>
+  );
+}
+
+export function ExternalIcon({ size = 16 }: { size?: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 18 18"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.5}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M7 3H3v12h12v-4" />
+      <path d="M10 3h5v5M15 3 8 10" />
     </svg>
   );
 }

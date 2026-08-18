@@ -11,6 +11,7 @@ interface QueuedToilet {
   venueName: string | null;
   lat: number;
   lng: number;
+  review: string | null;
 }
 
 export async function enqueuePost(
@@ -56,6 +57,9 @@ export async function flushQueue(authorId: string): Promise<{ sent: number; rema
         const t = await createToilet(authorId, { ...q.input, venue_id: venueId });
         if (q.storagePaths.length > 0) {
           await attachDraftPhotos(authorId, t.id, q.storagePaths);
+        }
+        if (q.review) {
+          await addReview(authorId, t.id, q.review);
         }
       } else if (item.kind === "review") {
         const { toiletId, body } = item.payload as { toiletId: string; body: string };

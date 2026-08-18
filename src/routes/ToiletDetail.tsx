@@ -4,11 +4,11 @@ import { TopBar } from "../components/layout/TopBar";
 import { ReportSheet } from "../components/ReportSheet";
 import { getToilet, addReview, photoUrl } from "../lib/api";
 import { enqueuePost } from "../lib/offlineQueue";
-import { ACCESS_LABELS, VENUE_LABELS } from "../lib/labels";
+import { accessTypesLabel, venueTypesLabel } from "../lib/labels";
 import { scoreColor } from "../lib/score";
 import type { ToiletWithAuthor, ReportTargetType } from "../lib/types";
 import { useIdentity } from "../components/IdentityGateProvider";
-import { isSaved, toggleSaved } from "../lib/savedList";
+import { ExternalIcon } from "../components/layout/NavIcons";
 
 export function ToiletDetail() {
   const { id } = useParams<{ id: string }>();
@@ -20,8 +20,7 @@ export function ToiletDetail() {
     null
   );
   const [reviewText, setReviewText] = useState("");
-  const [reviewOpen, setReviewOpen] = useState(false);
-  const [saved, setSaved] = useState(false);
+  const [posting, setPosting] = useState(false);
 
   async function load() {
     if (!id) return;
@@ -31,7 +30,6 @@ export function ToiletDetail() {
 
   useEffect(() => {
     load();
-    if (id) isSaved(id).then(setSaved);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
@@ -42,17 +40,21 @@ export function ToiletDetail() {
   const reviews = toilet.reviews?.filter((r) => !r.hidden) ?? [];
 
   async function submitReview() {
-    if (!id || !reviewText.trim()) return;
-    await withIdentity(async (p) => {
-      if (!navigator.onLine) {
-        await enqueuePost("review", { toiletId: id, body: reviewText.trim() });
-        return;
-      }
-      await addReview(p.id, id, reviewText.trim());
-    });
-    setReviewText("");
-    setReviewOpen(false);
-    load();
+    if (!id || !reviewText.trim() || posting) return;
+    setPosting(true);
+    try {
+      await withIdentity(async (p) => {
+        if (!navigator.onLine) {
+          await enqueuePost("review", { toiletId: id, body: reviewText.trim() });
+          return;
+        }
+        await addReview(p.id, id, reviewText.trim());
+      });
+      setReviewText("");
+      load();
+    } finally {
+      setPosting(false);
+    }
   }
 
   const bar = (label: string, value: number | null) => (
@@ -67,23 +69,12 @@ export function ToiletDetail() {
     </>
   );
 
-  const displayName = toilet.venue_name || VENUE_LABELS[toilet.venue_type];
+  const displayName = toilet.venue_name || venueTypesLabel(toilet.venue_types) || "Toilet";
   const title = toilet.floor ? `${displayName} · Floor ${toilet.floor}` : displayName;
 
   return (
     <>
-      <TopBar
-        back
-        title={title}
-        right={
-          <span
-            style={{ fontSize: 12, color: saved ? "var(--chart-4)" : "var(--text-muted)", cursor: "pointer" }}
-            onClick={() => id && toggleSaved(id).then(setSaved)}
-          >
-            {saved ? "★ Saved" : "☆ Save"}
-          </span>
-        }
-      />
+      <TopBar back title={title} />
       <div className="screen-body">
         {photos.length > 0 ? (
           <div style={{ position: "relative" }}>
@@ -125,7 +116,7 @@ export function ToiletDetail() {
           </span>
         </div>
         <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
-          {VENUE_LABELS[toilet.venue_type]} · {ACCESS_LABELS[toilet.access_type]}
+          {venueTypesLabel(toilet.venue_types)} · {accessTypesLabel(toilet.access_types)}
           {toilet.wheelchair === "yes" && " · Wheelchair"}
           {toilet.supplies.length > 0 && ` · ${toilet.supplies.join(", ")}`}
         </div>
@@ -135,9 +126,7 @@ export function ToiletDetail() {
             <b>HOW TO FIND IT</b>
             <br />
             {toilet.hint_note}
-            <span
-              style={{ display: "block", fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}
-            >
+            <span style={{ display: "block", fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>
               {toilet.author?.handle ?? "unknown"} ·{" "}
               <span
                 style={{ cursor: "pointer" }}
@@ -156,8 +145,20 @@ export function ToiletDetail() {
         </div>
 
         <div className="lbl">Reviews</div>
+        <div className="box">
+          <textarea
+            value={reviewText}
+            onChange={(e) => setReviewText(e.target.value)}
+            placeholder="What did you notice?"
+            rows={3}
+            style={{ border: "none", resize: "none", fontSize: 13 }}
+          />
+          <button className="btn" onClick={submitReview} disabled={!reviewText.trim() || posting}>
+            {posting ? "Posting…" : `Post review${profile ? ` as ${profile.handle}` : ""}`}
+          </button>
+        </div>
         {reviews.length === 0 && (
-          <div style={{ fontSize: 12, color: "var(--text-muted)" }}>No reviews yet.</div>
+          <div style={{ fontSize: 12, color: "var(--text-muted)" }}>No reviews yet — be the first.</div>
         )}
         {reviews.map((r) => (
           <div key={r.id} className="box" style={{ fontSize: 11 }}>
@@ -174,22 +175,6 @@ export function ToiletDetail() {
           </div>
         ))}
 
-        {reviewOpen && (
-          <div className="box">
-            <textarea
-              autoFocus
-              value={reviewText}
-              onChange={(e) => setReviewText(e.target.value)}
-              placeholder="What did you notice?"
-              rows={3}
-              style={{ border: "none", resize: "none", fontSize: 13 }}
-            />
-            <button className="btn" onClick={submitReview} disabled={!reviewText.trim()}>
-              Post review{profile ? ` as ${profile.handle}` : ""}
-            </button>
-          </div>
-        )}
-
         <span
           style={{ fontSize: 12, color: "var(--chart-4)", cursor: "pointer" }}
           onClick={() => navigate(`/t/${id}/add-photos`)}
@@ -198,19 +183,16 @@ export function ToiletDetail() {
         </span>
       </div>
 
-      <div style={{ borderTop: "1.5px solid var(--border-strong)", padding: 9, display: "flex", gap: 7 }}>
+      <div style={{ borderTop: "1.5px solid var(--border-strong)", padding: 9 }}>
         <a
           className="btn"
-          style={{ flex: 1 }}
+          style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}
           href={`https://www.google.com/maps/search/?api=1&query=${toilet.lat},${toilet.lng}`}
           target="_blank"
           rel="noreferrer"
         >
-          Open in Maps
+          <ExternalIcon /> Open in Maps
         </a>
-        <button className="btn2" style={{ width: 96 }} onClick={() => setReviewOpen((v) => !v)}>
-          Review
-        </button>
       </div>
 
       {report && (

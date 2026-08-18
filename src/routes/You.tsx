@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Sheet } from "../components/layout/Sheet";
 import { useIdentity } from "../components/IdentityGateProvider";
 import { myContributions, type ReviewWithToilet } from "../lib/api";
-import { VENUE_LABELS } from "../lib/labels";
+import { venueTypesLabel } from "../lib/labels";
 import { CONFIG } from "../lib/config";
 import { ScoreBadge } from "../components/toilet/ScoreBadge";
 import type { Toilet } from "../lib/types";
@@ -59,6 +59,10 @@ export function You() {
         </span>
       </div>
       <div className="screen-body">
+        <div className="ann" style={{ textAlign: "center" }}>
+          Thanks for helping people find a decent loo.
+        </div>
+
         <div className="box" style={{ alignItems: "center", gap: 5 }}>
           <span className="num" style={{ fontSize: 17 }}>
             {profile.handle}
@@ -67,13 +71,9 @@ export function You() {
             {isGuest ? "Guest · this device only" : "Handle saved"}
           </span>
           {isGuest && (
-            <span
-              className="chip"
-              style={{ borderColor: "var(--chart-4)", color: "var(--chart-4)" }}
-              onClick={() => navigate("/you/save-handle")}
-            >
-              Save your handle
-            </span>
+            <button className="btn" style={{ width: "100%", marginTop: 4 }} onClick={() => navigate("/you/save-handle")}>
+              Create an account to keep {profile.handle}
+            </button>
           )}
         </div>
 
@@ -103,7 +103,7 @@ export function You() {
             style={{ flexDirection: "row", justifyContent: "space-between", cursor: "pointer" }}
             onClick={() => navigate(`/t/${t.id}`)}
           >
-            <span>{t.venue_name || VENUE_LABELS[t.venue_type]}</span>
+            <span>{t.venue_name || venueTypesLabel(t.venue_types) || "Toilet"}</span>
             <ScoreBadge score={t.overall_score} />
           </div>
         ))}
@@ -120,7 +120,7 @@ export function You() {
             onClick={() => navigate(`/t/${r.toilet_id}`)}
           >
             <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "var(--text-muted)" }}>
-              <span>{r.toilet?.venue_name || (r.toilet ? VENUE_LABELS[r.toilet.venue_type] : "Deleted listing")}</span>
+              <span>{r.toilet?.venue_name || (r.toilet ? venueTypesLabel(r.toilet.venue_types) : "Deleted listing")}</span>
               <span>{new Date(r.created_at).toLocaleDateString()}</span>
             </div>
             <span>"{r.body}"</span>

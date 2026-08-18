@@ -1,5 +1,5 @@
 import { NavLink } from "react-router-dom";
-import { AddIcon, NearbyIcon, SavedIcon, YouIcon } from "./NavIcons";
+import { AddIcon, NearbyIcon, YouIcon } from "./NavIcons";
 
 export function BottomNav() {
   return (
@@ -7,10 +7,6 @@ export function BottomNav() {
       <NavLink to="/" end className={({ isActive }) => (isActive ? "active" : "")}>
         <NearbyIcon />
         Nearby
-      </NavLink>
-      <NavLink to="/saved" className={({ isActive }) => (isActive ? "active" : "")}>
-        <SavedIcon />
-        Saved
       </NavLink>
       <NavLink to="/add" className={({ isActive }) => (isActive ? "active" : "")}>
         <AddIcon />

@@ -8,6 +8,7 @@ import type {
   ToiletPhoto,
   ToiletWithAuthor,
   Venue,
+  VenueTypeDef,
 } from "./types";
 
 const PHOTO_BUCKET = CONFIG.api.photoBucket;
@@ -15,8 +16,8 @@ const PHOTO_BUCKET = CONFIG.api.photoBucket;
 export interface NewToiletInput {
   lat: number;
   lng: number;
-  venue_type: Toilet["venue_type"];
-  access_type: Toilet["access_type"];
+  venue_types: string[];
+  access_types: string[];
   supplies: string[];
   wheelchair: Toilet["wheelchair"];
   hint_chips: string[];
@@ -120,6 +121,26 @@ export async function findOrCreateVenue(
   return data as Venue;
 }
 
+/** All venue-type catalog entries (base + user-added custom). */
+export async function listVenueTypes(): Promise<VenueTypeDef[]> {
+  const { data, error } = await supabase
+    .from("venue_types")
+    .select("key, label, is_custom")
+    .order("is_custom")
+    .order("label");
+  if (error) throw error;
+  return (data as VenueTypeDef[]) ?? [];
+}
+
+/** Normalizes + persists a custom venue type, returning its key. */
+export async function findOrCreateVenueType(label: string): Promise<string> {
+  const { data, error } = await supabase.rpc("find_or_create_venue_type", {
+    p_label: label,
+  });
+  if (error) throw error;
+  return data as string;
+}
+
 export async function uploadToiletPhoto(
   authorId: string,
   toiletId: string,
@@ -213,7 +234,7 @@ export async function fileReport(
 }
 
 export interface ReviewWithToilet extends Review {
-  toilet: Pick<Toilet, "id" | "venue_name" | "venue_type"> | null;
+  toilet: Pick<Toilet, "id" | "venue_name" | "venue_types"> | null;
 }
 
 export async function myContributions(authorId: string) {
@@ -221,7 +242,7 @@ export async function myContributions(authorId: string) {
     supabase.from("toilets").select("*").eq("author_id", authorId),
     supabase
       .from("reviews")
-      .select("*, toilet:toilets(id, venue_name, venue_type)")
+      .select("*, toilet:toilets(id, venue_name, venue_types)")
       .eq("author_id", authorId)
       .order("created_at", { ascending: false }),
   ]);
@@ -300,12 +321,12 @@ export async function getReportTarget(
   }
   const { data } = await supabase
     .from("toilets")
-    .select("venue_name, venue_type, author_id, hint_note, author:profiles!toilets_author_id_fkey(handle)")
+    .select("venue_name, venue_types, author_id, hint_note, author:profiles!toilets_author_id_fkey(handle)")
     .eq("id", report.target_id)
     .maybeSingle();
   if (!data) return null;
   return {
-    preview: (data.hint_note as string) || (data.venue_name as string) || (data.venue_type as string),
+    preview: (data.hint_note as string) || (data.venue_name as string) || ((data.venue_types as string[])?.join(", ") ?? ""),
     authorId: data.author_id as string,
     authorHandle: (data.author as unknown as { handle: string } | null)?.handle,
   };

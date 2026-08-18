@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { ScoreBadge } from "../../components/toilet/ScoreBadge";
 import { useIdentity } from "../../components/IdentityGateProvider";
 import { photoUrl } from "../../lib/api";
+import { ExternalIcon, PlusIcon } from "../../components/layout/NavIcons";
 import type { Toilet } from "../../lib/types";
 
 export function Posted({
@@ -129,10 +130,14 @@ export function Posted({
       )}
 
       <button className="btn2" onClick={() => navigate(`/t/${toilet.id}`)}>
-        Open the full listing
+        <span style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+          <ExternalIcon /> Open the full listing
+        </span>
       </button>
       <button className="btn" style={{ marginTop: "auto" }} onClick={onAddAnother}>
-        Add another nearby
+        <span style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+          <PlusIcon /> Add another nearby
+        </span>
       </button>
       <button
         className="ghost"
