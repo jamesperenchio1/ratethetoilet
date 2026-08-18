@@ -43,9 +43,9 @@ export function StepHint({
 
       <div className="lbl">Bonus · finding it</div>
       <div className="ann">
-        The rating's done — this part just helps the next person actually find the door. Skip it if
-        you're not sure; anyone can add their own tip later, so a couple of different notes here isn't
-        a conflict, it's just more coverage.
+        This becomes the pinned starting hint everyone sees first. If someone else finds a better way
+        in, they add it as a review on the listing — every review stays visible with its own name and
+        date, so extra input just adds coverage, it never overwrites yours.
       </div>
 
       <div className="lbl">Tap what applies (pick any, or none)</div>

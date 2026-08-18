@@ -1,9 +1,12 @@
+// Breakpoints match scoreLabel's exactly, so the color and the word under a
+// slider always describe the same tier.
 export function scoreColor(score: number | null | undefined): string {
   if (score == null) return "var(--ink-4)";
-  if (score >= 80) return "var(--score-great)";
-  if (score >= 65) return "var(--score-good)";
-  if (score >= 45) return "var(--score-ok)";
-  return "var(--score-poor)";
+  if (score >= 90) return "var(--score-great)";
+  if (score >= 75) return "var(--score-good)";
+  if (score >= 60) return "var(--score-ok)";
+  if (score >= 40) return "var(--score-poor)";
+  return "var(--score-bad)";
 }
 
 export function scoreLabel(score: number | null | undefined): string {

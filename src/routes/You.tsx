@@ -2,10 +2,10 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Sheet } from "../components/layout/Sheet";
 import { useIdentity } from "../components/IdentityGateProvider";
-import { myContributions } from "../lib/api";
+import { myContributions, type ReviewWithToilet } from "../lib/api";
 import { VENUE_LABELS } from "../lib/labels";
 import { ScoreBadge } from "../components/toilet/ScoreBadge";
-import type { Toilet, Review } from "../lib/types";
+import type { Toilet } from "../lib/types";
 
 const NUDGE_DISMISSED_KEY = "ratethetoilet:nudge-dismissed";
 
@@ -13,7 +13,7 @@ export function You() {
   const navigate = useNavigate();
   const { profile, isGuest, withIdentity } = useIdentity();
   const [toilets, setToilets] = useState<Toilet[]>([]);
-  const [reviews, setReviews] = useState<Review[]>([]);
+  const [reviews, setReviews] = useState<ReviewWithToilet[]>([]);
   const [showNudge, setShowNudge] = useState(false);
 
   useEffect(() => {
@@ -104,6 +104,25 @@ export function You() {
           >
             <span>{t.venue_name || VENUE_LABELS[t.venue_type]}</span>
             <ScoreBadge score={t.overall_score} />
+          </div>
+        ))}
+
+        <div className="lbl">Your reviews</div>
+        {reviews.length === 0 && (
+          <div style={{ fontSize: 12, color: "var(--text-muted)" }}>Nothing yet.</div>
+        )}
+        {reviews.map((r) => (
+          <div
+            key={r.id}
+            className="box"
+            style={{ cursor: "pointer" }}
+            onClick={() => navigate(`/t/${r.toilet_id}`)}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "var(--text-muted)" }}>
+              <span>{r.toilet?.venue_name || (r.toilet ? VENUE_LABELS[r.toilet.venue_type] : "Deleted listing")}</span>
+              <span>{new Date(r.created_at).toLocaleDateString()}</span>
+            </div>
+            <span>"{r.body}"</span>
           </div>
         ))}
       </div>

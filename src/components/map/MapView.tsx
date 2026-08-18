@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Map as MaplibreMap, Marker, setWorkerUrl } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { scoreColor } from "../../lib/score";
@@ -43,6 +43,7 @@ export function MapView({
   const mapRef = useRef<MaplibreMap | null>(null);
   const markersRef = useRef<Marker[]>([]);
   const dragMarkerRef = useRef<Marker | null>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -54,6 +55,7 @@ export function MapView({
       zoom,
       attributionControl: false,
     });
+    map.once("load", () => setLoading(false));
     mapRef.current = map;
     return () => {
       map.remove();
@@ -117,6 +119,23 @@ export function MapView({
   return (
     <div className={className} style={{ position: "relative", flex: 1, minHeight: 140 }}>
       <div ref={containerRef} style={{ position: "absolute", inset: 0 }} />
+      {loading && (
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            background: "var(--map-land)",
+            color: "var(--text-muted)",
+            fontSize: 12,
+            zIndex: 1,
+          }}
+        >
+          Loading map…
+        </div>
+      )}
       {onGpsClick && (
         <button
           onClick={onGpsClick}

@@ -15,13 +15,20 @@ function Slider({
   return (
     <>
       <div className="lbl">{label}</div>
-      <input
-        type="range"
-        min={0}
-        max={100}
-        value={value}
-        onChange={(e) => onChange(Number(e.target.value))}
-      />
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <span style={{ fontSize: 10, color: "var(--text-muted)", width: 44 }}>{scoreLabel(0)}</span>
+        <input
+          type="range"
+          min={0}
+          max={100}
+          value={value}
+          onChange={(e) => onChange(Number(e.target.value))}
+          style={{ flex: 1 }}
+        />
+        <span style={{ fontSize: 10, color: "var(--text-muted)", width: 44, textAlign: "right" }}>
+          {scoreLabel(100)}
+        </span>
+      </div>
       <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
         {value} · {scoreLabel(value)}
       </div>

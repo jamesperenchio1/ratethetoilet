@@ -55,8 +55,10 @@ export default defineConfig({
         display: "standalone",
         start_url: "/",
         icons: [
-          { src: "/icon-192.png", sizes: "192x192", type: "image/png" },
-          { src: "/icon-512.png", sizes: "512x512", type: "image/png" },
+          { src: "/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
+          { src: "/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any" },
+          { src: "/icon-192.png", sizes: "192x192", type: "image/png", purpose: "maskable" },
+          { src: "/icon-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
         ],
       },
       workbox: {
@@ -66,6 +68,16 @@ export default defineConfig({
             urlPattern: ({ url }) => url.pathname.startsWith("/storage/v1/object/public/"),
             handler: "CacheFirst",
             options: { cacheName: "toilet-photos", expiration: { maxEntries: 200 } },
+          },
+          {
+            // Map tiles + style JSON — cache so repeat visits render instantly
+            // instead of re-fetching the whole basemap every time.
+            urlPattern: ({ url }) => url.hostname === "tiles.openfreemap.org",
+            handler: "StaleWhileRevalidate",
+            options: {
+              cacheName: "map-tiles",
+              expiration: { maxEntries: 800, maxAgeSeconds: 60 * 60 * 24 * 30 },
+            },
           },
         ],
       },
