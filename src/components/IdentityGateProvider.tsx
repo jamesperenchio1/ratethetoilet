@@ -15,20 +15,20 @@ const Ctx = createContext<IdentityGateValue | null>(null);
 
 export function IdentityGateProvider({ children }: { children: ReactNode }) {
   const auth = useAuth();
-  const [pendingHandle, setPendingHandle] = useState<string | null>(null);
-  const resolverRef = useRef<{
+  const [showHandleSheet, setShowHandleSheet] = useState(false);
+  const resolversRef = useRef<Array<{
     resolve: (p: Profile) => void;
     reject: (e: unknown) => void;
-  } | null>(null);
+  }>>([]);
 
   const withIdentity = useCallback(
     async <T,>(action: (profile: Profile) => Promise<T>): Promise<T> => {
       let profile = auth.profile;
       if (!profile) {
-        profile = await auth.ensureIdentity();
+        await auth.ensureIdentity();
         const confirmed = await new Promise<Profile>((resolve, reject) => {
-          resolverRef.current = { resolve, reject };
-          setPendingHandle(profile!.handle);
+          resolversRef.current.push({ resolve, reject });
+          setShowHandleSheet(true);
         });
         profile = confirmed;
       }
@@ -39,20 +39,16 @@ export function IdentityGateProvider({ children }: { children: ReactNode }) {
 
   async function handleConfirm(handle: string) {
     const updated = await auth.setHandle(handle);
-    setPendingHandle(null);
-    resolverRef.current?.resolve(updated);
-    resolverRef.current = null;
+    setShowHandleSheet(false);
+    const pending = resolversRef.current.splice(0);
+    pending.forEach((r) => r.resolve(updated));
   }
 
   return (
     <Ctx.Provider value={{ ...auth, withIdentity }}>
       {children}
-      {pendingHandle && (
-        <HandleSheet
-          initialHandle={pendingHandle}
-          onShuffle={auth.shuffleHandle}
-          onConfirm={handleConfirm}
-        />
+      {showHandleSheet && (
+        <HandleSheet onConfirm={handleConfirm} onSaveNameRequested={auth.sendKeepNameLink} />
       )}
     </Ctx.Provider>
   );

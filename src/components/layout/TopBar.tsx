@@ -6,19 +6,21 @@ export function TopBar({
   meta,
   onClose,
   back,
+  onBack,
   right,
 }: {
   title: ReactNode;
   meta?: string;
   onClose?: boolean;
   back?: boolean;
+  onBack?: () => void;
   right?: ReactNode;
 }) {
   const navigate = useNavigate();
   return (
     <div className="topbar">
       {back && (
-        <span className="back" onClick={() => navigate(-1)}>
+        <span className="back" onClick={onBack ?? (() => navigate(-1))}>
           ←
         </span>
       )}

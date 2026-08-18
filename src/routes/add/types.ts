@@ -1,4 +1,5 @@
 import type { AccessType, TriState, VenueType } from "../../lib/types";
+import { CONFIG } from "../../lib/config";
 
 export interface PendingPhoto {
   localId: string;
@@ -9,42 +10,64 @@ export interface PendingPhoto {
   status: "uploading" | "done" | "error";
 }
 
-export interface ToiletDraft {
-  draftId: string;
+/** One toilet's per-floor data. The primary submission is an entry too — a
+ * single-restroom add is just a draft whose `additionalFloors` is empty. */
+export interface FloorEntry {
+  entryId: string;
+  floorLabel: string | null;
   photos: PendingPhoto[];
-  lat: number | null;
-  lng: number | null;
-  locationSource: "gps" | "search" | "manual" | null;
-  venueName: string | null;
-  venueType: VenueType | null;
-  accessType: AccessType | null;
-  supplies: string[];
-  wheelchair: TriState | null;
   cleanliness: number;
   smell: number;
   privacy: number;
+  wheelchair: TriState | null;
   hintChips: string[];
   hintNote: string;
 }
 
-export const DEFAULT_SCORE = 50;
+export function emptyFloorEntry(floorLabel: string | null = null): FloorEntry {
+  const d = CONFIG.wizard.defaultScore;
+  return {
+    entryId: crypto.randomUUID(),
+    floorLabel,
+    photos: [],
+    cleanliness: d,
+    smell: d,
+    privacy: d,
+    wheelchair: null,
+    hintChips: [],
+    hintNote: "",
+  };
+}
+
+export interface ToiletDraft {
+  draftId: string;
+  primary: FloorEntry;
+  additionalFloors: FloorEntry[];
+  multiFloor: boolean;
+  lat: number | null;
+  lng: number | null;
+  locationSource: "gps" | "search" | "manual" | null;
+  venueType: VenueType | null;
+  venueName: string | null;
+  /** Resolved venue id (null = create a new venue on submit). */
+  venueId: string | null;
+  accessType: AccessType | null;
+  supplies: string[];
+}
 
 export function emptyDraft(): ToiletDraft {
   return {
     draftId: crypto.randomUUID(),
-    photos: [],
+    primary: emptyFloorEntry(),
+    additionalFloors: [],
+    multiFloor: false,
     lat: null,
     lng: null,
     locationSource: null,
-    venueName: null,
     venueType: null,
+    venueName: null,
+    venueId: null,
     accessType: null,
     supplies: [],
-    wheelchair: null,
-    cleanliness: DEFAULT_SCORE,
-    smell: DEFAULT_SCORE,
-    privacy: DEFAULT_SCORE,
-    hintChips: [],
-    hintNote: "",
   };
 }

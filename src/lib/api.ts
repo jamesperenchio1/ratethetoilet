@@ -1,4 +1,5 @@
 import { supabase } from "./supabase";
+import { CONFIG } from "./config";
 import type {
   Report,
   ReportTargetType,
@@ -6,9 +7,10 @@ import type {
   Toilet,
   ToiletPhoto,
   ToiletWithAuthor,
+  Venue,
 } from "./types";
 
-const PHOTO_BUCKET = "toilet-photos";
+const PHOTO_BUCKET = CONFIG.api.photoBucket;
 
 export interface NewToiletInput {
   lat: number;
@@ -24,6 +26,8 @@ export interface NewToiletInput {
   privacy: number | null;
   venue_name?: string | null;
   location_source?: Toilet["location_source"];
+  floor?: string | null;
+  venue_id?: string | null;
 }
 
 export async function canPost(): Promise<{ allowed: boolean; retryAt: string | null }> {
@@ -34,7 +38,7 @@ export async function canPost(): Promise<{ allowed: boolean; retryAt: string | n
 
 export async function listToiletsNear(
   center: { lat: number; lng: number },
-  radiusMeters = 3000
+  radiusMeters = CONFIG.api.defaultRadiusM
 ): Promise<Toilet[]> {
   const { data, error } = await supabase.rpc("toilets_near", {
     p_lat: center.lat,
@@ -51,7 +55,7 @@ export async function searchToilets(query: string): Promise<Toilet[]> {
     .select("*")
     .eq("hidden", false)
     .ilike("venue_name", `%${query}%`)
-    .limit(20);
+    .limit(CONFIG.api.searchLimit);
   if (error) throw error;
   return (data as Toilet[]) ?? [];
 }
@@ -81,6 +85,39 @@ export async function createToilet(
     .single();
   if (error) throw error;
   return data as Toilet;
+}
+
+/** Nearby venues with names matching the query — the wizard's "attach to an
+ * existing place" lookup. */
+export async function searchVenues(
+  name: string,
+  near: { lat: number; lng: number }
+): Promise<Venue[]> {
+  const { data, error } = await supabase.rpc("venues_near", {
+    p_lat: near.lat,
+    p_lng: near.lng,
+    p_radius_m: CONFIG.venue.lookupRadiusM,
+  });
+  if (error) throw error;
+  const venues = (data as Venue[]) ?? [];
+  const q = name.trim().toLowerCase();
+  if (!q) return venues;
+  return venues.filter((v) => v.name.toLowerCase().includes(q));
+}
+
+/** Reuses a venue by name+proximity or creates it, returning the venue row. */
+export async function findOrCreateVenue(
+  name: string,
+  lat: number,
+  lng: number
+): Promise<Venue> {
+  const { data, error } = await supabase.rpc("find_or_create_venue", {
+    p_name: name,
+    p_lat: lat,
+    p_lng: lng,
+  });
+  if (error) throw error;
+  return data as Venue;
 }
 
 export async function uploadToiletPhoto(

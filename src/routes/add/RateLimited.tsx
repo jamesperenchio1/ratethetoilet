@@ -1,4 +1,5 @@
 import { useNavigate } from "react-router-dom";
+import { CONFIG } from "../../lib/config";
 
 export function RateLimited({ retryAt }: { retryAt: string | null }) {
   const navigate = useNavigate();
@@ -9,7 +10,7 @@ export function RateLimited({ retryAt }: { retryAt: string | null }) {
   return (
     <div className="screen-body">
       <div className="note">
-        <b>Slow down a moment — ten toilets an hour.</b>
+        <b>Slow down a moment — {CONFIG.api.postRateLimitPerHour} posts an hour.</b>
         <br />
         You can post again at <span className="num">{timeLabel}</span>.
       </div>

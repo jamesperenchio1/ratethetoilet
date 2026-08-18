@@ -1,20 +1,21 @@
-// Breakpoints match scoreLabel's exactly, so the color and the word under a
-// slider always describe the same tier.
+import { CONFIG } from "./config";
+
 export function scoreColor(score: number | null | undefined): string {
   if (score == null) return "var(--ink-4)";
-  if (score >= 90) return "var(--score-great)";
-  if (score >= 75) return "var(--score-good)";
-  if (score >= 60) return "var(--score-ok)";
-  if (score >= 40) return "var(--score-poor)";
-  return "var(--score-bad)";
+  const { great, good, ok } = CONFIG.score.color;
+  if (score >= great) return "var(--score-great)";
+  if (score >= good) return "var(--score-good)";
+  if (score >= ok) return "var(--score-ok)";
+  return "var(--score-poor)";
 }
 
 export function scoreLabel(score: number | null | undefined): string {
   if (score == null) return "Not rated";
-  if (score >= 90) return "Spotless";
-  if (score >= 75) return "Clean";
-  if (score >= 60) return "Usable";
-  if (score >= 40) return "Rough";
+  const { spotless, clean, usable, rough } = CONFIG.score.label;
+  if (score >= spotless) return "Spotless";
+  if (score >= clean) return "Clean";
+  if (score >= usable) return "Usable";
+  if (score >= rough) return "Rough";
   return "Avoid";
 }
 

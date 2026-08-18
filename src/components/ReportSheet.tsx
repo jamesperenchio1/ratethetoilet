@@ -1,25 +1,11 @@
 import { useState } from "react";
 import { Sheet } from "./layout/Sheet";
 import { fileReport } from "../lib/api";
+import { CONFIG } from "../lib/config";
 import type { ReportTargetType } from "../lib/types";
 
-const PHOTO_REASONS = [
-  "Shows a person or a face",
-  "Not a toilet at all",
-  "Photo is not of this toilet",
-  "Graphic or disgusting shot",
-  "Advertising or spam",
-  "Something else — closed, duplicate, wrong pin…",
-];
-
-const CONTENT_REASONS = [
-  "Wrong or outdated — I was just there",
-  "Directions send you somewhere else",
-  "Abusive or personal attack",
-  "Advertising or spam",
-  "Names a staff member",
-  "Something else",
-];
+const PHOTO_REASONS = CONFIG.report.photoReasons;
+const CONTENT_REASONS = CONFIG.report.contentReasons;
 
 export function ReportSheet({
   targetType,

@@ -1,22 +1,23 @@
 import { NavLink } from "react-router-dom";
+import { AddIcon, NearbyIcon, SavedIcon, YouIcon } from "./NavIcons";
 
 export function BottomNav() {
   return (
     <nav className="bottom-nav">
       <NavLink to="/" end className={({ isActive }) => (isActive ? "active" : "")}>
-        <i />
+        <NearbyIcon />
         Nearby
       </NavLink>
       <NavLink to="/saved" className={({ isActive }) => (isActive ? "active" : "")}>
-        <i />
+        <SavedIcon />
         Saved
       </NavLink>
       <NavLink to="/add" className={({ isActive }) => (isActive ? "active" : "")}>
-        <i />
+        <AddIcon />
         Add
       </NavLink>
       <NavLink to="/you" className={({ isActive }) => (isActive ? "active" : "")}>
-        <i />
+        <YouIcon />
         You
       </NavLink>
     </nav>

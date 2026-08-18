@@ -40,6 +40,17 @@ export interface Toilet {
   hidden: boolean;
   venue_name?: string | null;
   location_source?: "gps" | "search" | "manual" | null;
+  floor?: string | null;
+  venue_id?: string | null;
+}
+
+export interface Venue {
+  id: string;
+  name: string;
+  lat: number;
+  lng: number;
+  author_id: string | null;
+  created_at: string;
 }
 
 export interface ToiletPhoto {

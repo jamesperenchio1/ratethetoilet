@@ -1,23 +1,8 @@
 import type { AccessType, VenueType } from "./types";
+import { CONFIG } from "./config";
 
-export const VENUE_LABELS: Record<VenueType, string> = {
-  mall: "Mall",
-  gas: "Gas station",
-  temple: "Temple",
-  transit: "Transit",
-  public: "Public",
-  cafe: "Café",
-  hotel: "Hotel",
-  street: "Street",
-  other: "Other",
-};
-
-export const ACCESS_LABELS: Record<AccessType, string> = {
-  free: "Free",
-  paid: "Paid",
-  customers_only: "Customers only",
-  ask_for_key: "Ask for key",
-};
+export const VENUE_LABELS: Record<VenueType, string> = CONFIG.labels.venue;
+export const ACCESS_LABELS: Record<AccessType, string> = CONFIG.labels.access;
 
 export function distanceLabel(meters: number): string {
   if (meters < 1000) return `${Math.round(meters)} m`;

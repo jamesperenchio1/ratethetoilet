@@ -2,6 +2,8 @@
 // key required. Same open-data stack as the OpenFreeMap map tiles already used
 // in MapView. Nominatim's usage policy caps this at ~1 request/second and asks
 // for reasonable client-side debouncing, which callers are expected to do.
+import { CONFIG } from "./config";
+
 const NOMINATIM_BASE = "https://nominatim.openstreetmap.org";
 
 export interface GeocodeResult {
@@ -21,7 +23,7 @@ interface NominatimRow {
   address?: Record<string, string>;
 }
 
-const TIMEOUT_MS = 6000;
+const TIMEOUT_MS = CONFIG.api.geocodeTimeoutMs;
 
 /** Fetch that gives up after TIMEOUT_MS so a dead network can't hang the UI forever. */
 function fetchWithTimeout(url: string, externalSignal?: AbortSignal): Promise<Response> {
@@ -80,11 +82,11 @@ export async function searchPlaces(
     format: "jsonv2",
     q,
     addressdetails: "1",
-    limit: "6",
+    limit: String(CONFIG.api.geocodeSearchLimit),
   });
   if (opts.near) {
     const { lat, lng } = opts.near;
-    const d = 0.35; // ~35km soft bias box
+    const d = CONFIG.api.geocodeBiasBox; // ~35km soft bias box
     params.set("viewbox", `${lng - d},${lat + d},${lng + d},${lat - d}`);
     params.set("bounded", "0");
   }

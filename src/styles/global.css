@@ -105,13 +105,6 @@ textarea {
   color: var(--chart-4);
   font-weight: 700;
 }
-.bottom-nav i {
-  display: block;
-  width: 18px;
-  height: 18px;
-  border: var(--border-w) solid currentColor;
-  border-radius: var(--radius-sm);
-}
 
 .box {
   border: var(--border-w) solid var(--border-strong);

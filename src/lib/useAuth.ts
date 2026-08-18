@@ -94,12 +94,6 @@ export function useAuth() {
     return row;
   }, [ensureSession, loadProfile]);
 
-  const shuffleHandle = useCallback(async (): Promise<string> => {
-    const { data, error } = await supabase.rpc("mint_handle");
-    if (error) throw error;
-    return data as string;
-  }, []);
-
   const setHandle = useCallback(
     async (newHandle: string) => {
       if (!session) throw new Error("No session");
@@ -134,7 +128,6 @@ export function useAuth() {
     isGuest,
     ensureSession,
     ensureIdentity,
-    shuffleHandle,
     setHandle,
     sendKeepNameLink,
     refreshProfile: () => (session ? loadProfile(session.user.id) : null),

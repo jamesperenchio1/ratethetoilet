@@ -67,11 +67,14 @@ export function ToiletDetail() {
     </>
   );
 
+  const displayName = toilet.venue_name || VENUE_LABELS[toilet.venue_type];
+  const title = toilet.floor ? `${displayName} · Floor ${toilet.floor}` : displayName;
+
   return (
     <>
       <TopBar
         back
-        title={toilet.venue_name || VENUE_LABELS[toilet.venue_type]}
+        title={title}
         right={
           <span
             style={{ fontSize: 12, color: saved ? "var(--chart-4)" : "var(--text-muted)", cursor: "pointer" }}
@@ -116,7 +119,7 @@ export function ToiletDetail() {
         )}
 
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-          <b style={{ fontSize: 15 }}>{toilet.venue_name || VENUE_LABELS[toilet.venue_type]}</b>
+          <b style={{ fontSize: 15 }}>{title}</b>
           <span className="num" style={{ fontSize: 22, color: scoreColor(toilet.overall_score) }}>
             {toilet.overall_score ?? "—"}
           </span>

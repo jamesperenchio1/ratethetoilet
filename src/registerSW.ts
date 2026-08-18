@@ -1,4 +1,5 @@
 import { registerSW } from "virtual:pwa-register";
+import { CONFIG } from "./lib/config";
 
 // The generated service worker already calls skipWaiting() + clientsClaim()
 // unconditionally (registerType: "autoUpdate"), so a new deploy takes over as
@@ -11,7 +12,7 @@ registerSW({
   immediate: true,
   onRegisteredSW(_swUrl, registration) {
     if (!registration) return;
-    setInterval(() => registration.update(), 60_000);
+    setInterval(() => registration.update(), CONFIG.storage.swPollMs);
   },
 });
 

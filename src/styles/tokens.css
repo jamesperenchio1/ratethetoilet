@@ -29,6 +29,11 @@
   --red-2: #e2988b;
   --red-3: #d6412b;
   --red-4: #9c2a19;
+  /* --- Green: upload/action success --- */
+  --green-1: #dcf0d8;
+  --green-2: #93c98a;
+  --green-3: #3f8f2f;
+  --green-4: #2a6420;
   /* --- Map substrate --- */
   --map-land: #f1ede0;
   --map-water: #c7dcea;

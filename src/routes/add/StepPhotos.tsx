@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
-import type { Dispatch, SetStateAction } from "react";
 import { uploadDraftPhoto, photoUrl } from "../../lib/api";
-import type { PendingPhoto, ToiletDraft } from "./types";
+import { CONFIG } from "../../lib/config";
+import type { FloorEntry, PendingPhoto } from "./types";
 import { PhotoEditor } from "./PhotoEditor";
+import { StepDots } from "./StepDots";
 
 function Thumb({ photo, onClick }: { photo: PendingPhoto; onClick: () => void }) {
   const [objectUrl, setObjectUrl] = useState<string | null>(null);
@@ -26,7 +27,12 @@ function Thumb({ photo, onClick }: { photo: PendingPhoto; onClick: () => void })
         width: 64,
         height: 64,
         border: "1.5px solid var(--border-strong)",
-        borderColor: photo.status === "error" ? "var(--red-3)" : "var(--border-strong)",
+        borderColor:
+          photo.status === "error"
+            ? "var(--red-3)"
+            : photo.status === "done"
+              ? "var(--green-3)"
+              : "var(--border-strong)",
         borderRadius: 4,
         position: "relative",
         cursor: "pointer",
@@ -78,22 +84,43 @@ function Thumb({ photo, onClick }: { photo: PendingPhoto; onClick: () => void })
 }
 
 export function StepPhotos({
-  draft,
-  onChange,
+  entry,
+  onChangeEntry,
   onNext,
+  ensureSession,
+  draftId,
+  stepIndex = 1,
+  stepTotal = 5,
+  heading,
 }: {
-  draft: ToiletDraft;
-  onChange: Dispatch<SetStateAction<ToiletDraft>>;
+  entry: FloorEntry;
+  onChangeEntry: (updater: (prev: FloorEntry) => FloorEntry) => void;
   onNext: () => void;
+  ensureSession: () => Promise<unknown>;
+  draftId: string;
+  stepIndex?: number;
+  stepTotal?: number;
+  heading?: string;
 }) {
   const cameraRef = useRef<HTMLInputElement>(null);
   const uploadRef = useRef<HTMLInputElement>(null);
   const [editing, setEditing] = useState<{ localId: string; file: File } | null>(null);
   const [loadingEdit, setLoadingEdit] = useState<string | null>(null);
 
+  function updatePhoto(localId: string, patch: Partial<PendingPhoto>) {
+    onChangeEntry((prev) => ({
+      ...prev,
+      photos: prev.photos.map((ph) => (ph.localId === localId ? { ...ph, ...patch } : ph)),
+    }));
+  }
+
+  function removePhoto(localId: string) {
+    onChangeEntry((prev) => ({ ...prev, photos: prev.photos.filter((p) => p.localId !== localId) }));
+  }
+
   async function addFiles(files: FileList | null) {
     if (!files || files.length === 0) return;
-    const room = Math.max(0, 6 - draft.photos.length);
+    const room = Math.max(0, CONFIG.wizard.maxPhotos - entry.photos.length);
     const chosen = Array.from(files).slice(0, room);
     const withIds = chosen.map((file) => ({ localId: crypto.randomUUID(), file }));
     const pending: PendingPhoto[] = withIds.map(({ localId, file }) => ({
@@ -102,7 +129,17 @@ export function StepPhotos({
       storagePath: null,
       status: "uploading",
     }));
-    onChange((prev) => ({ ...prev, photos: [...prev.photos, ...pending] }));
+    onChangeEntry((prev) => ({ ...prev, photos: [...prev.photos, ...pending] }));
+
+    // A device session (anonymous, if needed) must exist before storage
+    // accepts an insert — waiting here avoids a race with the wizard's silent
+    // sign-in on mount, which could otherwise still be in flight.
+    try {
+      await ensureSession();
+    } catch {
+      pending.forEach((p) => updatePhoto(p.localId, { status: "error" }));
+      return;
+    }
 
     for (const { localId, file } of withIds) {
       await uploadOne(localId, file);
@@ -112,13 +149,13 @@ export function StepPhotos({
   async function uploadOne(localId: string, file: File) {
     updatePhoto(localId, { file, status: "uploading" });
     try {
-      const path = await uploadDraftPhoto(draft.draftId, localId, file);
+      const path = await uploadDraftPhoto(draftId, localId, file);
       updatePhoto(localId, { storagePath: path, status: "done" });
     } catch {
       // One retry — a single flaky mobile request shouldn't flip a fine photo to "failed".
       try {
-        await new Promise((r) => setTimeout(r, 1200));
-        const path = await uploadDraftPhoto(draft.draftId, localId, file);
+        await new Promise((r) => setTimeout(r, CONFIG.wizard.photoRetryDelayMs));
+        const path = await uploadDraftPhoto(draftId, localId, file);
         updatePhoto(localId, { storagePath: path, status: "done" });
       } catch {
         updatePhoto(localId, { status: "error" });
@@ -126,15 +163,17 @@ export function StepPhotos({
     }
   }
 
-  function updatePhoto(localId: string, patch: Partial<PendingPhoto>) {
-    onChange((prev) => ({
-      ...prev,
-      photos: prev.photos.map((ph) => (ph.localId === localId ? { ...ph, ...patch } : ph)),
-    }));
-  }
-
-  function removePhoto(localId: string) {
-    onChange((prev) => ({ ...prev, photos: prev.photos.filter((p) => p.localId !== localId) }));
+  async function retryPhoto(localId: string) {
+    const p = entry.photos.find((ph) => ph.localId === localId);
+    if (!p || !p.file) return;
+    updatePhoto(localId, { status: "uploading" });
+    try {
+      await ensureSession();
+    } catch {
+      updatePhoto(localId, { status: "error" });
+      return;
+    }
+    await uploadOne(localId, p.file);
   }
 
   async function openEditor(photo: PendingPhoto) {
@@ -156,18 +195,13 @@ export function StepPhotos({
     }
   }
 
-  const doneCount = draft.photos.filter((p) => p.status === "done").length;
-  const anyUploading = draft.photos.some((p) => p.status === "uploading");
+  const doneCount = entry.photos.filter((p) => p.status === "done").length;
+  const anyUploading = entry.photos.some((p) => p.status === "uploading");
 
   return (
     <div className="screen-body">
-      <div className="stepper">
-        <i className="done" />
-        <i />
-        <i />
-        <i />
-        <i />
-      </div>
+      <StepDots total={stepTotal} done={stepIndex} />
+      {heading && <b style={{ fontSize: 14 }}>{heading}</b>}
 
       <input
         ref={cameraRef}
@@ -187,13 +221,13 @@ export function StepPhotos({
         onChange={(e) => addFiles(e.target.files)}
       />
 
-      {draft.photos.length === 0 ? (
+      {entry.photos.length === 0 ? (
         <div className="box dashed" style={{ flex: 1, alignItems: "center", justifyContent: "center", minHeight: 160 }}>
           No photos yet
         </div>
       ) : (
         <div className="box" style={{ flex: 1, alignItems: "center", justifyContent: "center", minHeight: 160 }}>
-          {`${doneCount} of ${draft.photos.length} uploaded`} · tap a photo to crop or rotate
+          {`${doneCount} of ${entry.photos.length} uploaded`} · tap a photo to crop or rotate
         </div>
       )}
 
@@ -206,11 +240,11 @@ export function StepPhotos({
         </button>
       </div>
 
-      {draft.photos.length > 0 && (
+      {entry.photos.length > 0 && (
         <>
-          <div className="lbl">Added · {draft.photos.length} of 6</div>
+          <div className="lbl">Added · {entry.photos.length} of {CONFIG.wizard.maxPhotos}</div>
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-            {draft.photos.map((p) => (
+            {entry.photos.map((p) => (
               <div key={p.localId} style={{ position: "relative" }}>
                 <Thumb photo={p} onClick={() => openEditor(p)} />
                 {loadingEdit === p.localId && (
@@ -241,6 +275,31 @@ export function StepPhotos({
                 >
                   ✕
                 </span>
+                {p.status === "error" && (
+                  <span
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      retryPhoto(p.localId);
+                    }}
+                    style={{
+                      position: "absolute",
+                      left: -5,
+                      bottom: -5,
+                      width: 18,
+                      height: 18,
+                      borderRadius: "50%",
+                      background: "var(--red-3)",
+                      color: "#fff",
+                      fontSize: 11,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      cursor: "pointer",
+                    }}
+                  >
+                    ⟳
+                  </span>
+                )}
               </div>
             ))}
           </div>
@@ -252,9 +311,9 @@ export function StepPhotos({
       </div>
 
       <button className="btn" disabled={anyUploading} onClick={onNext}>
-        {draft.photos.length > 0 ? `Use these ${draft.photos.length} photos` : "Continue without photos"}
+        {entry.photos.length > 0 ? `Use these ${doneCount} photos` : "Continue without photos"}
       </button>
-      {draft.photos.length > 0 && (
+      {entry.photos.length > 0 && (
         <button className="ghost" onClick={onNext}>
           Skip photos for now
         </button>

@@ -1,7 +1,8 @@
-import type { Dispatch, SetStateAction } from "react";
-import type { ToiletDraft } from "./types";
 import { overallScore, scoreColor, scoreLabel } from "../../lib/score";
+import { CONFIG } from "../../lib/config";
 import type { TriState } from "../../lib/types";
+import type { FloorEntry } from "./types";
+import { StepDots } from "./StepDots";
 
 function Slider({
   label,
@@ -16,7 +17,7 @@ function Slider({
     <>
       <div className="lbl">{label}</div>
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-        <span style={{ fontSize: 10, color: "var(--text-muted)", width: 44 }}>{scoreLabel(0)}</span>
+        <span style={{ fontSize: 10, color: "var(--text-muted)", width: 44 }}>{"avoid"}</span>
         <input
           type="range"
           min={0}
@@ -26,7 +27,7 @@ function Slider({
           style={{ flex: 1 }}
         />
         <span style={{ fontSize: 10, color: "var(--text-muted)", width: 44, textAlign: "right" }}>
-          {scoreLabel(100)}
+          {"great"}
         </span>
       </div>
       <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
@@ -37,25 +38,26 @@ function Slider({
 }
 
 export function StepScores({
-  draft,
-  onChange,
+  entry,
+  onChangeEntry,
   onNext,
+  stepIndex = 4,
+  stepTotal = 5,
+  heading,
 }: {
-  draft: ToiletDraft;
-  onChange: Dispatch<SetStateAction<ToiletDraft>>;
+  entry: FloorEntry;
+  onChangeEntry: (updater: (prev: FloorEntry) => FloorEntry) => void;
   onNext: () => void;
+  stepIndex?: number;
+  stepTotal?: number;
+  heading?: string;
 }) {
-  const overall = overallScore(draft.cleanliness, draft.smell, draft.privacy);
+  const overall = overallScore(entry.cleanliness, entry.smell, entry.privacy);
 
   return (
     <div className="screen-body">
-      <div className="stepper">
-        <i className="done" />
-        <i className="done" />
-        <i className="done" />
-        <i className="done" />
-        <i />
-      </div>
+      <StepDots total={stepTotal} done={stepIndex} />
+      {heading && <b style={{ fontSize: 14 }}>{heading}</b>}
 
       <div className="box" style={{ alignItems: "center", gap: 8 }}>
         <span className="lbl">Overall</span>
@@ -65,22 +67,22 @@ export function StepScores({
         <span style={{ fontSize: 12 }}>{scoreLabel(overall)}</span>
       </div>
 
-      <div className="ann">Sliders start at 50 — drag toward great or toward avoid.</div>
+      <div className="ann">Sliders start at {CONFIG.wizard.defaultScore} — drag toward great or toward avoid.</div>
 
       <Slider
         label="Cleanliness"
-        value={draft.cleanliness}
-        onChange={(v) => onChange((prev) => ({ ...prev, cleanliness: v }))}
+        value={entry.cleanliness}
+        onChange={(v) => onChangeEntry((prev) => ({ ...prev, cleanliness: v }))}
       />
       <Slider
         label="Smell"
-        value={draft.smell}
-        onChange={(v) => onChange((prev) => ({ ...prev, smell: v }))}
+        value={entry.smell}
+        onChange={(v) => onChangeEntry((prev) => ({ ...prev, smell: v }))}
       />
       <Slider
         label="Privacy · lock & door"
-        value={draft.privacy}
-        onChange={(v) => onChange((prev) => ({ ...prev, privacy: v }))}
+        value={entry.privacy}
+        onChange={(v) => onChangeEntry((prev) => ({ ...prev, privacy: v }))}
       />
 
       <div className="lbl">Wheelchair</div>
@@ -88,8 +90,8 @@ export function StepScores({
         {(["yes", "no", "unsure"] as TriState[]).map((w) => (
           <span
             key={w}
-            className={`chip ${draft.wheelchair === w ? "on" : ""}`}
-            onClick={() => onChange((prev) => ({ ...prev, wheelchair: w }))}
+            className={`chip ${entry.wheelchair === w ? "on" : ""}`}
+            onClick={() => onChangeEntry((prev) => ({ ...prev, wheelchair: w }))}
           >
             {w[0].toUpperCase() + w.slice(1)}
           </span>

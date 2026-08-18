@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { TopBar } from "../components/layout/TopBar";
 import { useIdentity } from "../components/IdentityGateProvider";
 import { supabase } from "../lib/supabase";
+import { CONFIG } from "../lib/config";
 
 export function Settings() {
   const navigate = useNavigate();
@@ -14,8 +15,13 @@ export function Settings() {
 
   async function rename() {
     setError(null);
+    const v = newHandle.trim();
+    if (!/^[a-zA-Z0-9_]+$/.test(v) || v.length < 3 || v.length > CONFIG.handle.maxLength) {
+      setError(`Names are 3–${CONFIG.handle.maxLength} letters, numbers, or underscores.`);
+      return;
+    }
     try {
-      await setHandle(newHandle.trim());
+      await setHandle(v);
       setRenaming(false);
     } catch {
       setError("That name is taken.");

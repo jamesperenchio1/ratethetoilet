@@ -4,10 +4,11 @@ import { Sheet } from "../components/layout/Sheet";
 import { useIdentity } from "../components/IdentityGateProvider";
 import { myContributions, type ReviewWithToilet } from "../lib/api";
 import { VENUE_LABELS } from "../lib/labels";
+import { CONFIG } from "../lib/config";
 import { ScoreBadge } from "../components/toilet/ScoreBadge";
 import type { Toilet } from "../lib/types";
 
-const NUDGE_DISMISSED_KEY = "ratethetoilet:nudge-dismissed";
+const NUDGE_DISMISSED_KEY = CONFIG.storage.nudgeKey;
 
 export function You() {
   const navigate = useNavigate();

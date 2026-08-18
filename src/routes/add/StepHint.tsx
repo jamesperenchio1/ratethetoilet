@@ -1,29 +1,32 @@
-import type { Dispatch, SetStateAction } from "react";
-import type { ToiletDraft } from "./types";
+import { CONFIG } from "../../lib/config";
+import type { FloorEntry } from "./types";
+import { StepDots } from "./StepDots";
 
 // Wayfinding facts only — anything about payment or asking someone for access
 // already belongs to the Access step, not here.
-const HINT_CHIPS = [
-  "Round the back",
-  "Behind the building",
-  "Upstairs",
-  "Downstairs",
-  "No sign",
-  "Easy to miss",
-  "Near the entrance",
-];
+const HINT_CHIPS = CONFIG.wizard.hintChips;
 
 export function StepHint({
-  draft,
-  onChange,
+  entry,
+  onChangeEntry,
   onSubmit,
+  stepIndex = 5,
+  stepTotal = 5,
+  heading,
+  submitLabel = "Post this toilet",
+  skipLabel = "Skip — post without a hint",
 }: {
-  draft: ToiletDraft;
-  onChange: Dispatch<SetStateAction<ToiletDraft>>;
+  entry: FloorEntry;
+  onChangeEntry: (updater: (prev: FloorEntry) => FloorEntry) => void;
   onSubmit: () => void;
+  stepIndex?: number;
+  stepTotal?: number;
+  heading?: string;
+  submitLabel?: string;
+  skipLabel?: string;
 }) {
   function toggleChip(c: string) {
-    onChange((prev) => ({
+    onChangeEntry((prev) => ({
       ...prev,
       hintChips: prev.hintChips.includes(c)
         ? prev.hintChips.filter((x) => x !== c)
@@ -33,25 +36,23 @@ export function StepHint({
 
   return (
     <div className="screen-body">
-      <div className="stepper">
-        <i className="done" />
-        <i className="done" />
-        <i className="done" />
-        <i className="done" />
-        <i className="done" />
-      </div>
+      <StepDots total={stepTotal} done={stepIndex} />
+      {heading && <b style={{ fontSize: 14 }}>{heading}</b>}
 
-      <div className="lbl">Bonus · finding it</div>
       <div className="ann">
-        This becomes the pinned starting hint everyone sees first. If someone else finds a better way
-        in, they add it as a review on the listing — every review stays visible with its own name and
-        date, so extra input just adds coverage, it never overwrites yours.
+        This becomes the pinned starting hint everyone sees first. If someone else finds a better
+        way in, they add it as a review on the listing — every review stays visible with its own
+        name and date, so extra input just adds coverage, it never overwrites yours.
       </div>
 
       <div className="lbl">Tap what applies (pick any, or none)</div>
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
         {HINT_CHIPS.map((c) => (
-          <span key={c} className={`chip ${draft.hintChips.includes(c) ? "on" : ""}`} onClick={() => toggleChip(c)}>
+          <span
+            key={c}
+            className={`chip ${entry.hintChips.includes(c) ? "on" : ""}`}
+            onClick={() => toggleChip(c)}
+          >
             {c}
           </span>
         ))}
@@ -64,16 +65,16 @@ export function StepHint({
       <textarea
         className="note"
         style={{ minHeight: 82, border: "1.5px solid var(--border-note)", resize: "none" }}
-        value={draft.hintNote}
-        onChange={(e) => onChange((prev) => ({ ...prev, hintNote: e.target.value }))}
+        value={entry.hintNote}
+        onChange={(e) => onChangeEntry((prev) => ({ ...prev, hintNote: e.target.value }))}
         placeholder="Behind the Amazon café. Ask the cashier for the key, ฿5 coin."
       />
 
       <button className="btn" style={{ marginTop: "auto" }} onClick={onSubmit}>
-        Post this toilet
+        {submitLabel}
       </button>
       <button className="ghost" onClick={onSubmit}>
-        Skip — post without a hint
+        {skipLabel}
       </button>
     </div>
   );

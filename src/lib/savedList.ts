@@ -1,6 +1,7 @@
 import { get, set } from "idb-keyval";
+import { CONFIG } from "./config";
 
-const KEY = "saved-toilets";
+const KEY = CONFIG.storage.savedKey;
 
 export async function listSavedIds(): Promise<string[]> {
   return (await get(KEY)) ?? [];

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Map as MaplibreMap, Marker, setWorkerUrl } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { scoreColor } from "../../lib/score";
+import { CONFIG } from "../../lib/config";
 
 // maplibre-gl resolves its worker via `new URL("./maplibre-gl-worker.mjs", import.meta.url)`,
 // which points at our bundle's own URL once bundled, not the package's dist folder — 404s in
@@ -15,10 +16,14 @@ export interface MapPin {
   lat: number;
   lng: number;
   score: number | null;
+  /** Venue name shown on the pin (when the pin represents a grouped venue). */
+  label?: string | null;
+  /** Number of toilets collapsed into this pin. */
+  count?: number;
 }
 
-const OPENFREEMAP_STYLE = "https://tiles.openfreemap.org/styles/liberty";
-const BANGKOK = { lat: 13.7563, lng: 100.5018 };
+const OPENFREEMAP_STYLE = CONFIG.map.tileStyleUrl;
+const BANGKOK = CONFIG.map.defaultCenter;
 
 export function MapView({
   pins = [],
@@ -44,17 +49,26 @@ export function MapView({
   const markersRef = useRef<Marker[]>([]);
   const dragMarkerRef = useRef<Marker | null>(null);
   const [loading, setLoading] = useState(true);
+  const [failed, setFailed] = useState(false);
 
   useEffect(() => {
     if (!containerRef.current) return;
     const c = center ?? BANGKOK;
-    const map = new MaplibreMap({
-      container: containerRef.current,
-      style: OPENFREEMAP_STYLE,
-      center: [c.lng, c.lat],
-      zoom,
-      attributionControl: false,
-    });
+    let map: MaplibreMap;
+    try {
+      map = new MaplibreMap({
+        container: containerRef.current,
+        style: OPENFREEMAP_STYLE,
+        center: [c.lng, c.lat],
+        zoom,
+        attributionControl: false,
+      });
+    } catch {
+      // e.g. a device/browser without WebGL2 — don't take the whole screen down.
+      setLoading(false);
+      setFailed(true);
+      return;
+    }
     map.once("load", () => setLoading(false));
     mapRef.current = map;
     return () => {
@@ -79,12 +93,20 @@ export function MapView({
       el.style.background = scoreColor(pin.score);
       el.style.color = "#fff";
       el.style.font = "600 11px 'IBM Plex Mono', monospace";
-      el.style.padding = "4px 7px";
+      el.style.padding = "4px 8px";
       el.style.borderRadius = "999px";
       el.style.border = "1.5px solid rgba(255,255,255,.8)";
       el.style.boxShadow = "0 1px 3px rgba(0,0,0,.3)";
       el.style.cursor = "pointer";
-      el.textContent = pin.score == null ? "–" : String(pin.score);
+      el.style.maxWidth = "150px";
+      el.style.overflow = "hidden";
+      el.style.textOverflow = "ellipsis";
+      el.style.whiteSpace = "nowrap";
+      if (pin.label) {
+        el.textContent = pin.count && pin.count > 1 ? `${pin.label} · ${pin.count}` : pin.label;
+      } else {
+        el.textContent = pin.score == null ? "–" : String(pin.score);
+      }
       el.addEventListener("click", () => onPinClick?.(pin.id));
       return new Marker({ element: el })
         .setLngLat([pin.lng, pin.lat])
@@ -119,6 +141,24 @@ export function MapView({
   return (
     <div className={className} style={{ position: "relative", flex: 1, minHeight: 140 }}>
       <div ref={containerRef} style={{ position: "absolute", inset: 0 }} />
+      {failed && (
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            background: "var(--map-land)",
+            color: "var(--text-muted)",
+            fontSize: 12,
+            padding: 12,
+            textAlign: "center",
+          }}
+        >
+          Map unavailable on this device.
+        </div>
+      )}
       {loading && (
         <div
           style={{
@@ -169,7 +209,7 @@ export function locateDevice(): Promise<{ lat: number; lng: number }> {
       (pos) =>
         resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
       (err) => reject(err),
-      { enableHighAccuracy: true, timeout: 8000 }
+      { enableHighAccuracy: true, timeout: CONFIG.map.geolocationTimeoutMs }
     );
   });
 }

@@ -1,8 +1,17 @@
 import { get, set, del, keys } from "idb-keyval";
 import type { QueuedPost } from "./types";
-import { addReview, createToilet, type NewToiletInput } from "./api";
+import { addReview, attachDraftPhotos, createToilet, findOrCreateVenue, type NewToiletInput } from "./api";
+import { CONFIG } from "./config";
 
-const PREFIX = "queue:";
+const PREFIX = CONFIG.storage.queuePrefix;
+
+interface QueuedToilet {
+  input: NewToiletInput;
+  storagePaths: string[];
+  venueName: string | null;
+  lat: number;
+  lng: number;
+}
 
 export async function enqueuePost(
   kind: QueuedPost["kind"],
@@ -38,7 +47,16 @@ export async function flushQueue(authorId: string): Promise<{ sent: number; rema
   for (const item of items) {
     try {
       if (item.kind === "toilet") {
-        await createToilet(authorId, item.payload as NewToiletInput);
+        const q = item.payload as QueuedToilet;
+        let venueId = q.input.venue_id ?? null;
+        if (q.venueName && !venueId) {
+          const venue = await findOrCreateVenue(q.venueName, q.lat, q.lng);
+          venueId = venue.id;
+        }
+        const t = await createToilet(authorId, { ...q.input, venue_id: venueId });
+        if (q.storagePaths.length > 0) {
+          await attachDraftPhotos(authorId, t.id, q.storagePaths);
+        }
       } else if (item.kind === "review") {
         const { toiletId, body } = item.payload as { toiletId: string; body: string };
         await addReview(authorId, toiletId, body);

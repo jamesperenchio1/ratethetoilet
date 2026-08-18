@@ -12,10 +12,11 @@ export function ToiletCard({
   distanceMeters?: number;
 }) {
   const navigate = useNavigate();
+  const title = toilet.venue_name || VENUE_LABELS[toilet.venue_type];
   return (
     <div className="box" onClick={() => navigate(`/t/${toilet.id}`)} style={{ cursor: "pointer" }}>
       <div style={{ display: "flex", justifyContent: "space-between" }}>
-        <b>{toilet.venue_name || VENUE_LABELS[toilet.venue_type]}</b>
+        <b>{toilet.floor ? `${title} · Floor ${toilet.floor}` : title}</b>
         <ScoreBadge score={toilet.overall_score} />
       </div>
       <div style={{ fontSize: 11, color: "var(--text-muted)" }}>

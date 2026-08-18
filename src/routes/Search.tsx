@@ -4,8 +4,9 @@ import { searchToilets } from "../lib/api";
 import type { Toilet } from "../lib/types";
 import { ACCESS_LABELS, VENUE_LABELS } from "../lib/labels";
 import { get, set } from "idb-keyval";
+import { CONFIG } from "../lib/config";
 
-const RECENTS_KEY = "recent-searches";
+const RECENTS_KEY = CONFIG.storage.recentsKey;
 
 export function Search() {
   const navigate = useNavigate();
@@ -24,13 +25,13 @@ export function Search() {
     }
     const t = setTimeout(() => {
       searchToilets(query.trim()).then(setResults);
-    }, 250);
+    }, CONFIG.search.debounceMs);
     return () => clearTimeout(t);
   }, [query]);
 
   async function commitSearch() {
     if (!query.trim()) return;
-    const next = [query.trim(), ...recents.filter((r) => r !== query.trim())].slice(0, 5);
+    const next = [query.trim(), ...recents.filter((r) => r !== query.trim())].slice(0, CONFIG.storage.recentsMax);
     setRecents(next);
     await set(RECENTS_KEY, next);
   }

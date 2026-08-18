@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import { MapView, locateDevice } from "../../components/map/MapView";
 import { reverseGeocode, searchPlaces, type GeocodeResult } from "../../lib/geocode";
+import { CONFIG } from "../../lib/config";
 import type { ToiletDraft } from "./types";
 
 export function StepLocation({
@@ -27,7 +28,12 @@ export function StepLocation({
         onChange((prev) => ({ ...prev, lat: pos.lat, lng: pos.lng, locationSource: "gps" }))
       )
       .catch(() => {
-        onChange((prev) => ({ ...prev, lat: 13.7563, lng: 100.5018, locationSource: "manual" }));
+        onChange((prev) => ({
+          ...prev,
+          lat: CONFIG.map.defaultCenter.lat,
+          lng: CONFIG.map.defaultCenter.lng,
+          locationSource: "manual",
+        }));
       });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -44,10 +50,10 @@ export function StepLocation({
     const t = setTimeout(() => {
       reverseGeocode(draft.lat!, draft.lng!, controller.signal)
         .then((hit) => {
-          onChange((prev) => ({ ...prev, venueName: hit?.name ?? null }));
+          onChange((prev) => ({ ...prev, venueName: hit?.name ?? null, venueId: null }));
         })
         .finally(() => setResolvingName(false));
-    }, 300);
+    }, CONFIG.wizard.reverseGeocodeDelayMs);
     return () => {
       clearTimeout(t);
       controller.abort();
@@ -72,7 +78,7 @@ export function StepLocation({
       })
         .then(setResults)
         .finally(() => setSearching(false));
-    }, 350);
+    }, CONFIG.wizard.placeSearchDelayMs);
     return () => {
       clearTimeout(t);
       controller.abort();
@@ -87,6 +93,7 @@ export function StepLocation({
       lng: r.lng,
       locationSource: "search",
       venueName: r.name,
+      venueId: null,
     }));
     setQuery("");
     setResults([]);
