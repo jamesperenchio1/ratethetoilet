@@ -8,6 +8,7 @@ export interface PendingPhoto {
   file: File | null;
   storagePath: string | null;
   status: "uploading" | "done" | "error";
+  errorMessage?: string;
 }
 
 /** One toilet's per-floor data. The primary submission is an entry too — a

@@ -35,16 +35,24 @@ function fetchWithTimeout(url: string, externalSignal?: AbortSignal): Promise<Re
   );
 }
 
+/**
+ * A named POI (row.name, or an amenity/shop/building tag) is already specific
+ * to one building — use it as-is. Otherwise Nominatim falls back to the road
+ * or village name, which is shared by every house on that street: without a
+ * house number, two different houses a few doors apart end up with the exact
+ * same suggested name. Prefix with the house number whenever OSM has one.
+ */
 function shortName(row: NominatimRow): string {
   if (row.name) return row.name;
   const a = row.address;
-  return (
-    a?.amenity ||
-    a?.shop ||
-    a?.building ||
-    a?.road ||
-    row.display_name.split(",")[0].trim()
-  );
+  if (a?.amenity) return a.amenity;
+  if (a?.shop) return a.shop;
+  if (a?.building) return a.building;
+
+  const street = a?.road || a?.pedestrian || a?.footway;
+  const area = street || a?.village || a?.neighbourhood || a?.suburb;
+  if (a?.house_number && area) return `${a.house_number} ${area}`;
+  return area || row.display_name.split(",")[0].trim();
 }
 
 /** Best-effort place name for a dropped/dragged pin — falls back to null on any failure. */

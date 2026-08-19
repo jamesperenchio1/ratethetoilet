@@ -5,6 +5,12 @@ import type { FloorEntry, PendingPhoto } from "./types";
 import { PhotoEditor } from "./PhotoEditor";
 import { StepDots } from "./StepDots";
 
+function errorMessage(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  if (typeof err === "object" && err && "message" in err) return String((err as { message: unknown }).message);
+  return String(err);
+}
+
 function Thumb({ photo, onClick }: { photo: PendingPhoto; onClick: () => void }) {
   const [objectUrl, setObjectUrl] = useState<string | null>(null);
 
@@ -136,8 +142,9 @@ export function StepPhotos({
     // sign-in on mount, which could otherwise still be in flight.
     try {
       await ensureSession();
-    } catch {
-      pending.forEach((p) => updatePhoto(p.localId, { status: "error" }));
+    } catch (err) {
+      const msg = errorMessage(err);
+      pending.forEach((p) => updatePhoto(p.localId, { status: "error", errorMessage: msg }));
       return;
     }
 
@@ -147,18 +154,18 @@ export function StepPhotos({
   }
 
   async function uploadOne(localId: string, file: File) {
-    updatePhoto(localId, { file, status: "uploading" });
+    updatePhoto(localId, { file, status: "uploading", errorMessage: undefined });
     try {
       const path = await uploadDraftPhoto(draftId, localId, file);
       updatePhoto(localId, { storagePath: path, status: "done" });
-    } catch {
+    } catch (err1) {
       // One retry — a single flaky mobile request shouldn't flip a fine photo to "failed".
       try {
         await new Promise((r) => setTimeout(r, CONFIG.wizard.photoRetryDelayMs));
         const path = await uploadDraftPhoto(draftId, localId, file);
         updatePhoto(localId, { storagePath: path, status: "done" });
-      } catch {
-        updatePhoto(localId, { status: "error" });
+      } catch (err2) {
+        updatePhoto(localId, { status: "error", errorMessage: errorMessage(err2 ?? err1) });
       }
     }
   }
@@ -166,11 +173,11 @@ export function StepPhotos({
   async function retryPhoto(localId: string) {
     const p = entry.photos.find((ph) => ph.localId === localId);
     if (!p || !p.file) return;
-    updatePhoto(localId, { status: "uploading" });
+    updatePhoto(localId, { status: "uploading", errorMessage: undefined });
     try {
       await ensureSession();
-    } catch {
-      updatePhoto(localId, { status: "error" });
+    } catch (err) {
+      updatePhoto(localId, { status: "error", errorMessage: errorMessage(err) });
       return;
     }
     await uploadOne(localId, p.file);
@@ -245,7 +252,8 @@ export function StepPhotos({
           <div className="lbl">Added · {entry.photos.length} of {CONFIG.wizard.maxPhotos}</div>
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
             {entry.photos.map((p) => (
-              <div key={p.localId} style={{ position: "relative" }}>
+              <div key={p.localId} style={{ display: "flex", flexDirection: "column", gap: 2, maxWidth: 64 }}>
+              <div style={{ position: "relative" }}>
                 <Thumb photo={p} onClick={() => openEditor(p)} />
                 {loadingEdit === p.localId && (
                   <span style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10 }}>
@@ -300,6 +308,12 @@ export function StepPhotos({
                     ⟳
                   </span>
                 )}
+              </div>
+              {p.status === "error" && p.errorMessage && (
+                <span style={{ fontSize: 9, color: "var(--red-3)", wordBreak: "break-word" }}>
+                  {p.errorMessage}
+                </span>
+              )}
               </div>
             ))}
           </div>

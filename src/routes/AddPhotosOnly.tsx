@@ -76,7 +76,8 @@ export function AddPhotosOnly() {
       navigate(`/t/${id}`);
     } catch (err) {
       console.error(err);
-      setError("Couldn't upload — check your connection and try again.");
+      const detail = err instanceof Error ? err.message : String(err);
+      setError(`Couldn't upload: ${detail}`);
     } finally {
       setBusy(false);
     }
