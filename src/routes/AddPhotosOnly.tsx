@@ -3,6 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { TopBar } from "../components/layout/TopBar";
 import { useIdentity } from "../components/IdentityGateProvider";
 import { getToilet, uploadToiletPhoto, photoUrl } from "../lib/api";
+import { compressImage } from "../lib/imageCompress";
 import type { ToiletWithAuthor } from "../lib/types";
 
 function NewPhotoThumb({ file, onRemove }: { file: File; onRemove: () => void }) {
@@ -70,7 +71,8 @@ export function AddPhotosOnly() {
     try {
       await withIdentity(async (profile) => {
         for (const file of newPhotos) {
-          await uploadToiletPhoto(profile.id, id, file);
+          const compressed = await compressImage(file);
+          await uploadToiletPhoto(profile.id, id, compressed);
         }
       });
       navigate(`/t/${id}`);

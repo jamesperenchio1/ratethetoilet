@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { uploadDraftPhoto, photoUrl } from "../../lib/api";
+import { compressImage } from "../../lib/imageCompress";
 import { CONFIG } from "../../lib/config";
 import type { FloorEntry, PendingPhoto } from "./types";
 import { PhotoEditor } from "./PhotoEditor";
@@ -155,14 +156,18 @@ export function StepPhotos({
 
   async function uploadOne(localId: string, file: File) {
     updatePhoto(localId, { file, status: "uploading", errorMessage: undefined });
+    // Full-resolution phone photos (3-8MB HEIC/JPEG) are large enough that a
+    // slow or cellular connection can time out mid-transfer — downscale before
+    // sending. photo.file (used for preview/re-edit) keeps the original.
+    const upload = await compressImage(file);
     try {
-      const path = await uploadDraftPhoto(draftId, localId, file);
+      const path = await uploadDraftPhoto(draftId, localId, upload);
       updatePhoto(localId, { storagePath: path, status: "done" });
     } catch (err1) {
       // One retry — a single flaky mobile request shouldn't flip a fine photo to "failed".
       try {
         await new Promise((r) => setTimeout(r, CONFIG.wizard.photoRetryDelayMs));
-        const path = await uploadDraftPhoto(draftId, localId, file);
+        const path = await uploadDraftPhoto(draftId, localId, upload);
         updatePhoto(localId, { storagePath: path, status: "done" });
       } catch (err2) {
         updatePhoto(localId, { status: "error", errorMessage: errorMessage(err2 ?? err1) });
