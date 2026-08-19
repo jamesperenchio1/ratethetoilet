@@ -2,18 +2,12 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { MapView, locateDevice } from "../components/map/MapView";
 import { ToiletCard } from "../components/toilet/ToiletCard";
-import { listToiletsNear } from "../lib/api";
-import { haversineMeters } from "../lib/labels";
-import { venueTypesLabel } from "../lib/labels";
-import { groupToiletsByVenue, groupScore, type VenueGroup } from "../lib/venueGrouping";
+import { listAllToilets } from "../lib/api";
+import { haversineMeters, venueTypesLabel } from "../lib/labels";
 import { CONFIG } from "../lib/config";
 import type { Toilet } from "../lib/types";
 
 const BANGKOK = CONFIG.map.defaultCenter;
-
-// Fixed 3km is often empty in lightly-mapped areas even when a closer-than-you'd-
-// think toilet exists further out — widen the search instead of giving up.
-const SEARCH_RADII_M = CONFIG.map.searchRadiiM;
 
 interface Filters {
   freeOnly: boolean;
@@ -22,41 +16,6 @@ interface Filters {
 }
 
 const SHEET_PEEK = CONFIG.map.sheetPeekPx;
-
-function VenueGroupCard({ group, distanceMeters }: { group: VenueGroup; distanceMeters?: number }) {
-  const [open, setOpen] = useState(false);
-  const first = group.toilets[0];
-  return (
-    <div className="box" style={{ padding: 0, overflow: "hidden", gap: 0 }}>
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          padding: 10,
-          cursor: "pointer",
-        }}
-        onClick={() => setOpen((o) => !o)}
-      >
-        <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
-          <b>{group.name || venueTypesLabel(first.venue_types) || "Toilet"}</b>
-          <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
-            {group.toilets.length} floor{group.toilets.length === 1 ? "" : "s"}
-            {distanceMeters != null && ` · ${Math.round(distanceMeters)} m`}
-          </span>
-        </div>
-        <span style={{ fontSize: 11, color: "var(--chart-4)" }}>{open ? "Hide" : "Show"}</span>
-      </div>
-      {open && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: "0 10px 10px" }}>
-          {group.toilets.map((t) => (
-            <ToiletCard key={t.id} toilet={t} />
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
 
 export function Home() {
   const navigate = useNavigate();
@@ -100,21 +59,18 @@ export function Home() {
 
   useEffect(() => {
     let cancelled = false;
-    (async () => {
-      for (const radius of SEARCH_RADII_M) {
-        const rows = await listToiletsNear(center, radius);
-        if (cancelled) return;
-        const isLastAttempt = radius === SEARCH_RADII_M[SEARCH_RADII_M.length - 1];
-        if (rows.length > 0 || isLastAttempt) {
-          setToilets(rows);
-          return;
-        }
-      }
-    })();
+    // Fetch every non-hidden toilet once; distance-sorting happens client-side.
+    listAllToilets()
+      .then((rows) => {
+        if (!cancelled) setToilets(rows);
+      })
+      .catch(() => {
+        if (!cancelled) setToilets([]);
+      });
     return () => {
       cancelled = true;
     };
-  }, [center.lat, center.lng]);
+  }, []);
 
   const filtered = useMemo(() => {
     if (!toilets) return [];
@@ -130,23 +86,21 @@ export function Home() {
     });
   }, [toilets, filters]);
 
-  const groups = useMemo(() => groupToiletsByVenue(filtered), [filtered]);
-
   const withDistance = useMemo(
     () =>
-      groups
-        .map((g) => ({ g, d: haversineMeters(center, { lat: g.lat, lng: g.lng }) }))
+      filtered
+        .map((t) => ({ t, d: haversineMeters(center, { lat: t.lat, lng: t.lng }) }))
         .sort((a, b) => a.d - b.d),
-    [groups, center]
+    [filtered, center]
   );
 
-  const pins = groups.map((g) => ({
-    id: g.toilets[0].id,
-    lat: g.lat,
-    lng: g.lng,
-    score: groupScore(g),
-    label: g.name,
-    count: g.toilets.length,
+  // One pin per toilet — every listing is on the map, not just nearby ones.
+  const pins = filtered.map((t) => ({
+    id: t.id,
+    lat: t.lat,
+    lng: t.lng,
+    score: t.overall_score,
+    label: t.venue_name || venueTypesLabel(t.venue_types) || undefined,
   }));
 
   return (
@@ -155,6 +109,7 @@ export function Home() {
         <MapView
           pins={pins}
           center={center}
+          fitToPins={!hadNavCenter.current}
           onPinClick={(id) => navigate(`/t/${id}`)}
           onGpsClick={() => locateDevice().then(setCenter).catch(() => {})}
         />
@@ -265,8 +220,8 @@ export function Home() {
             >
               <b>
                 {toilets == null
-                  ? "Looking nearby…"
-                  : `${withDistance.length} place${withDistance.length === 1 ? "" : "s"} nearby`}
+                  ? "Loading…"
+                  : `${withDistance.length} toilet${withDistance.length === 1 ? "" : "s"} · nearest first`}
               </b>
               <span style={{ color: "var(--chart-4)" }}>{sheetExpanded ? "Show map" : "See list"}</span>
             </div>
@@ -275,9 +230,9 @@ export function Home() {
           <div className="screen-body" style={{ paddingTop: 2 }}>
             {toilets && withDistance.length === 0 && toilets.length === 0 && (
               <div className="center-empty">
-                <b style={{ color: "var(--text-primary)" }}>Nobody has mapped this area yet.</b>
+                <b style={{ color: "var(--text-primary)" }}>Nobody has mapped anything yet.</b>
                 <button className="btn" style={{ width: "auto", padding: "11px 20px" }} onClick={() => navigate("/add")}>
-                  Add the first toilet here
+                  Add the first toilet
                 </button>
               </div>
             )}
@@ -293,13 +248,9 @@ export function Home() {
                 </button>
               </div>
             )}
-            {withDistance.map(({ g, d }) =>
-              g.toilets.length === 1 ? (
-                <ToiletCard key={g.key} toilet={g.toilets[0]} distanceMeters={d} />
-              ) : (
-                <VenueGroupCard key={g.key} group={g} distanceMeters={d} />
-              )
-            )}
+            {withDistance.map(({ t, d }) => (
+              <ToiletCard key={t.id} toilet={t} distanceMeters={d} />
+            ))}
           </div>
         </div>
       </div>
@@ -337,7 +288,7 @@ export function Home() {
               <span className="num">{filters.minScore || "Any"}</span>
             </div>
             <button className="btn" onClick={() => setFiltersOpen(false)}>
-              Show {withDistance.length} place{withDistance.length === 1 ? "" : "s"}
+              Show {withDistance.length} toilet{withDistance.length === 1 ? "" : "s"}
             </button>
           </div>
         </div>

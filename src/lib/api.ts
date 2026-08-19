@@ -13,6 +13,76 @@ import type {
 
 const PHOTO_BUCKET = CONFIG.api.photoBucket;
 
+const UPLOAD_TIMEOUT_MS = 45_000;
+const UPLOAD_MAX_RETRIES = 3;
+
+/** True for browser-level network failures that usually mean "the body never
+ * made it across" — the right response is to retry, not to give up. */
+function isNetworkError(err: unknown): boolean {
+  const msg =
+    err instanceof Error ? err.message : typeof err === "string" ? err : String(err ?? "");
+  const lower = msg.toLowerCase();
+  return (
+    lower.includes("load failed") ||
+    lower.includes("failed to fetch") ||
+    lower.includes("networkerror") ||
+    lower.includes("network request failed") ||
+    lower.includes("timed out") ||
+    lower.includes("timeout") ||
+    lower.includes("aborted") ||
+    lower.includes("offline") ||
+    lower.includes("connection reset") ||
+    lower.includes("networkerror when fetching")
+  );
+}
+
+/** Human-readable message for a failed photo upload. */
+export function friendlyUploadError(err: unknown): string {
+  if (isNetworkError(err)) {
+    return "Couldn't upload — weak or interrupted connection. Tap ⟳ to retry.";
+  }
+  return err instanceof Error ? err.message : String(err);
+}
+
+/** Uploads one photo to storage with a per-attempt timeout and retries.
+ * Each attempt uses a fresh random path — the upload is never an upsert, so a
+ * timed-out attempt that actually landed server-side can't collide with the
+ * retry. Unique paths mean `toilet_photos.storage_path` always maps 1:1 to a
+ * file, and no UPDATE policy is needed on storage.objects. */
+async function storageUpload(
+  makePath: () => string,
+  file: File | Blob
+): Promise<string> {
+  let lastErr: unknown;
+  for (let attempt = 0; attempt <= UPLOAD_MAX_RETRIES; attempt++) {
+    if (attempt > 0) {
+      await new Promise((r) =>
+        setTimeout(r, Math.min(1000 * 2 ** (attempt - 1), 8000))
+      );
+    }
+    const path = makePath();
+    try {
+      const result = await Promise.race([
+        supabase.storage.from(PHOTO_BUCKET).upload(path, file, {
+          contentType: file.type || "image/jpeg",
+          cacheControl: "31536000",
+        }),
+        new Promise<never>((_, reject) =>
+          setTimeout(
+            () => reject(new Error(`upload timed out after ${UPLOAD_TIMEOUT_MS / 1000}s`)),
+            UPLOAD_TIMEOUT_MS * (attempt + 1)
+          )
+        ),
+      ]);
+      if (result.error) throw result.error;
+      return path;
+    } catch (err) {
+      lastErr = err;
+    }
+  }
+  throw lastErr;
+}
+
 export interface NewToiletInput {
   lat: number;
   lng: number;
@@ -46,6 +116,18 @@ export async function listToiletsNear(
     p_lng: center.lng,
     p_radius_m: radiusMeters,
   });
+  if (error) throw error;
+  return (data as Toilet[]) ?? [];
+}
+
+/** Every non-hidden toilet in the database. The app is small; the client
+ * sorts by distance to the current view center. */
+export async function listAllToilets(): Promise<Toilet[]> {
+  const { data, error } = await supabase
+    .from("toilets")
+    .select("*")
+    .eq("hidden", false)
+    .order("created_at", { ascending: true });
   if (error) throw error;
   return (data as Toilet[]) ?? [];
 }
@@ -146,12 +228,10 @@ export async function uploadToiletPhoto(
   toiletId: string,
   file: File | Blob
 ): Promise<ToiletPhoto> {
-  const ext = file instanceof File ? file.name.split(".").pop() : "jpg";
-  const path = `${toiletId}/${crypto.randomUUID()}.${ext ?? "jpg"}`;
-  const { error: upErr } = await supabase.storage
-    .from(PHOTO_BUCKET)
-    .upload(path, file, { contentType: file.type || "image/jpeg" });
-  if (upErr) throw upErr;
+  const path = await storageUpload(
+    () => `${toiletId}/${crypto.randomUUID()}.data`,
+    file
+  );
 
   const { data, error } = await supabase
     .from("toilet_photos")
@@ -167,13 +247,64 @@ export async function uploadDraftPhoto(
   localId: string,
   file: File | Blob
 ): Promise<string> {
-  const ext = file instanceof File ? file.name.split(".").pop() : "jpg";
-  const path = `draft/${draftId}/${localId}.${ext ?? "jpg"}`;
-  const { error } = await supabase.storage
-    .from(PHOTO_BUCKET)
-    .upload(path, file, { contentType: file.type || "image/jpeg" });
-  if (error) throw error;
+  const path = await storageUpload(
+    () => `draft/${draftId}/${localId}-${crypto.randomUUID()}.data`,
+    file
+  );
   return path;
+}
+
+/** Deletes a photo row and its storage object (author only). */
+export async function deleteToiletPhoto(photo: ToiletPhoto): Promise<void> {
+  if (photo.storage_path) {
+    const { error: rmErr } = await supabase.storage
+      .from(PHOTO_BUCKET)
+      .remove([photo.storage_path]);
+    // A missing object is fine — the row is the source of truth.
+    if (rmErr && rmErr.message !== "Object not found") throw rmErr;
+  }
+  const { error } = await supabase
+    .from("toilet_photos")
+    .delete()
+    .eq("id", photo.id)
+    .eq("author_id", photo.author_id);
+  if (error) throw error;
+}
+
+/** Editable fields on a listing, keyed by the toilet column name. */
+export interface ToiletEditInput {
+  venue_name: string | null;
+  venue_types: string[];
+  access_types: string[];
+  supplies: string[];
+  wheelchair: Toilet["wheelchair"];
+  hint_chips: string[];
+  hint_note: string | null;
+  cleanliness: number | null;
+  smell: number | null;
+  privacy: number | null;
+  floor: string | null;
+  lat: number;
+  lng: number;
+  location_source: Toilet["location_source"];
+  venue_id: string | null;
+}
+
+export async function updateOwnToilet(
+  id: string,
+  patch: ToiletEditInput
+): Promise<Toilet> {
+  const { data, error } = await supabase.rpc("update_own_toilet", {
+    p_id: id,
+    p_patch: JSON.parse(JSON.stringify(patch)),
+  });
+  if (error) throw error;
+  return data as Toilet;
+}
+
+export async function deleteOwnToilet(id: string): Promise<void> {
+  const { error } = await supabase.rpc("delete_own_toilet", { p_id: id });
+  if (error) throw error;
 }
 
 export async function attachDraftPhotos(

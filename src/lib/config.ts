@@ -51,6 +51,9 @@ export const CONFIG = {
     placeSearchDelayMs: 350,
     /** Delay before a single photo-upload retry (ms). */
     photoRetryDelayMs: 1200,
+    /** How many photos to compress+upload in parallel (a flaky link is better
+     * served by a couple of small transfers than one big serial queue). */
+    photoUploadConcurrency: 2,
   },
 
   labels: {

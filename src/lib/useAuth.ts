@@ -29,8 +29,19 @@ export function useAuth() {
     let mounted = true;
     supabase.auth.getSession().then(async ({ data }) => {
       if (!mounted) return;
-      setSession(data.session);
-      if (data.session) await loadProfile(data.session.user.id);
+      const s = data.session;
+      if (s) {
+        const p = await loadProfile(s.user.id);
+        if (!mounted) return;
+        // Keep the session even if there's no profile row yet — an anonymous
+        // profile is only minted on the first write (ensure_profile), so a
+        // missing profile here is normal, not a sign of a stale session.
+        setSession(s);
+        setProfile(p);
+      } else {
+        setSession(null);
+        setProfile(null);
+      }
       setLoading(false);
     });
 
@@ -38,7 +49,8 @@ export function useAuth() {
       async (_event, newSession) => {
         setSession(newSession);
         if (newSession) {
-          await loadProfile(newSession.user.id);
+          const p = await loadProfile(newSession.user.id);
+          setProfile(p);
         } else {
           setProfile(null);
         }
@@ -60,6 +72,8 @@ export function useAuth() {
   /** Ensures an (anonymous, if needed) session exists. Does not mint a handle. */
   const ensureSession = useCallback(async (): Promise<Session> => {
     const { data: existing } = await supabase.auth.getSession();
+    // Keep any existing session — an anonymous session without a profile row is
+    // normal (the profile is minted on first write), so don't drop it here.
     if (existing.session) return existing.session;
 
     if (!signInInFlight.current) {

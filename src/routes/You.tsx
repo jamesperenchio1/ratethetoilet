@@ -104,7 +104,18 @@ export function You() {
             onClick={() => navigate(`/t/${t.id}`)}
           >
             <span>{t.venue_name || venueTypesLabel(t.venue_types) || "Toilet"}</span>
-            <ScoreBadge score={t.overall_score} />
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <ScoreBadge score={t.overall_score} />
+              <span
+                style={{ fontSize: 11, color: "var(--chart-4)", cursor: "pointer" }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  navigate(`/t/${t.id}/edit`);
+                }}
+              >
+                Edit
+              </span>
+            </div>
           </div>
         ))}
 

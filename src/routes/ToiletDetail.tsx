@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { TopBar } from "../components/layout/TopBar";
 import { ReportSheet } from "../components/ReportSheet";
-import { getToilet, addReview, photoUrl } from "../lib/api";
+import { getToilet, addReview, photoUrl, deleteOwnToilet } from "../lib/api";
 import { enqueuePost } from "../lib/offlineQueue";
 import { accessTypesLabel, venueTypesLabel } from "../lib/labels";
 import { scoreColor } from "../lib/score";
@@ -21,6 +21,8 @@ export function ToiletDetail() {
   );
   const [reviewText, setReviewText] = useState("");
   const [posting, setPosting] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   async function load() {
     if (!id) return;
@@ -54,6 +56,17 @@ export function ToiletDetail() {
       load();
     } finally {
       setPosting(false);
+    }
+  }
+
+  async function removeListing() {
+    if (!id || deleting) return;
+    setDeleting(true);
+    try {
+      await deleteOwnToilet(id);
+      navigate("/you");
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -120,6 +133,35 @@ export function ToiletDetail() {
           {toilet.wheelchair === "yes" && " · Wheelchair"}
           {toilet.supplies.length > 0 && ` · ${toilet.supplies.join(", ")}`}
         </div>
+
+        {profile?.id === toilet.author_id && (
+          <div style={{ display: "flex", gap: 6 }}>
+            <button className="btn2" style={{ flex: 1 }} onClick={() => navigate(`/t/${toilet.id}/edit`)}>
+              Edit
+            </button>
+            {confirmDelete ? (
+              <div className="box" style={{ flex: 1, borderColor: "var(--red-3)", gap: 6 }}>
+                <span style={{ fontSize: 12 }}>Delete this listing for good?</span>
+                <div style={{ display: "flex", gap: 6 }}>
+                  <button className="btn danger" style={{ flex: 1 }} disabled={deleting} onClick={removeListing}>
+                    {deleting ? "…" : "Yes, delete"}
+                  </button>
+                  <button className="btn2" style={{ flex: 1 }} onClick={() => setConfirmDelete(false)}>
+                    Keep
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button
+                className="btn2"
+                style={{ flex: 1, color: "var(--red-3)", borderColor: "var(--red-3)" }}
+                onClick={() => setConfirmDelete(true)}
+              >
+                Delete
+              </button>
+            )}
+          </div>
+        )}
 
         {toilet.hint_note && (
           <div className="note">

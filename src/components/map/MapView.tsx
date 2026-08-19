@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Map as MaplibreMap, Marker, setWorkerUrl } from "maplibre-gl";
+import { Map as MaplibreMap, Marker, LngLatBounds, setWorkerUrl } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { scoreColor } from "../../lib/score";
 import { CONFIG } from "../../lib/config";
@@ -34,6 +34,7 @@ export function MapView({
   onDraggableMarkerMove,
   onGpsClick,
   className,
+  fitToPins = false,
 }: {
   pins?: MapPin[];
   center?: { lat: number; lng: number };
@@ -43,11 +44,14 @@ export function MapView({
   onDraggableMarkerMove?: (pos: { lat: number; lng: number }) => void;
   onGpsClick?: () => void;
   className?: string;
+  /** On first pin render, zoom the map out to frame every pin. */
+  fitToPins?: boolean;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MaplibreMap | null>(null);
   const markersRef = useRef<Marker[]>([]);
   const dragMarkerRef = useRef<Marker | null>(null);
+  const fitDoneRef = useRef(false);
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
 
@@ -112,10 +116,16 @@ export function MapView({
         .setLngLat([pin.lng, pin.lat])
         .addTo(map);
     });
+    if (fitToPins && !fitDoneRef.current && pins.length > 0) {
+      const bounds = new LngLatBounds();
+      pins.forEach((p) => bounds.extend([p.lng, p.lat]));
+      map.fitBounds(bounds, { padding: 60, duration: 500 });
+      fitDoneRef.current = true;
+    }
     return () => {
       markersRef.current.forEach((m) => m.remove());
     };
-  }, [pins, onPinClick]);
+  }, [pins, onPinClick, fitToPins]);
 
   useEffect(() => {
     const map = mapRef.current;

@@ -4,6 +4,7 @@ import { OfflineBanner } from "./components/layout/OfflineBanner";
 import { Home } from "./routes/Home";
 import { Search } from "./routes/Search";
 import { ToiletDetail } from "./routes/ToiletDetail";
+import { EditToilet } from "./routes/EditToilet";
 import { AddPhotosOnly } from "./routes/AddPhotosOnly";
 import { AddToiletWizard } from "./routes/add/AddToiletWizard";
 import { You } from "./routes/You";
@@ -25,6 +26,7 @@ export default function App() {
         <Route path="/" element={<Home />} />
         <Route path="/search" element={<Search />} />
         <Route path="/t/:id" element={<ToiletDetail />} />
+        <Route path="/t/:id/edit" element={<EditToilet />} />
         <Route path="/t/:id/add-photos" element={<AddPhotosOnly />} />
         <Route path="/add" element={<AddToiletWizard />} />
         <Route path="/you" element={<You />} />

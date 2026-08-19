@@ -1,16 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import { uploadDraftPhoto, photoUrl } from "../../lib/api";
+import { uploadDraftPhoto, photoUrl, friendlyUploadError } from "../../lib/api";
 import { compressImage } from "../../lib/imageCompress";
 import { CONFIG } from "../../lib/config";
 import type { FloorEntry, PendingPhoto } from "./types";
 import { PhotoEditor } from "./PhotoEditor";
 import { StepDots } from "./StepDots";
-
-function errorMessage(err: unknown): string {
-  if (err instanceof Error) return err.message;
-  if (typeof err === "object" && err && "message" in err) return String((err as { message: unknown }).message);
-  return String(err);
-}
 
 function Thumb({ photo, onClick }: { photo: PendingPhoto; onClick: () => void }) {
   const [objectUrl, setObjectUrl] = useState<string | null>(null);
@@ -144,14 +138,24 @@ export function StepPhotos({
     try {
       await ensureSession();
     } catch (err) {
-      const msg = errorMessage(err);
+      const msg = friendlyUploadError(err);
       pending.forEach((p) => updatePhoto(p.localId, { status: "error", errorMessage: msg }));
       return;
     }
 
-    for (const { localId, file } of withIds) {
-      await uploadOne(localId, file);
-    }
+    // Upload the batch in parallel with a small concurrency cap — a flaky link
+    // is better served by a couple of small transfers than one long serial queue.
+    const queue = [...pending];
+    const workers = Array.from(
+      { length: Math.min(CONFIG.wizard.photoUploadConcurrency, queue.length) },
+      async () => {
+        while (queue.length) {
+          const p = queue.shift()!;
+          await uploadOne(p.localId, p.file!);
+        }
+      }
+    );
+    await Promise.all(workers);
   }
 
   async function uploadOne(localId: string, file: File) {
@@ -170,7 +174,7 @@ export function StepPhotos({
         const path = await uploadDraftPhoto(draftId, localId, upload);
         updatePhoto(localId, { storagePath: path, status: "done" });
       } catch (err2) {
-        updatePhoto(localId, { status: "error", errorMessage: errorMessage(err2 ?? err1) });
+        updatePhoto(localId, { status: "error", errorMessage: friendlyUploadError(err2 ?? err1) });
       }
     }
   }
@@ -182,7 +186,7 @@ export function StepPhotos({
     try {
       await ensureSession();
     } catch (err) {
-      updatePhoto(localId, { status: "error", errorMessage: errorMessage(err) });
+      updatePhoto(localId, { status: "error", errorMessage: friendlyUploadError(err) });
       return;
     }
     await uploadOne(localId, p.file);

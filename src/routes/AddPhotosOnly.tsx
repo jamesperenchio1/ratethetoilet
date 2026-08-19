@@ -2,8 +2,9 @@ import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { TopBar } from "../components/layout/TopBar";
 import { useIdentity } from "../components/IdentityGateProvider";
-import { getToilet, uploadToiletPhoto, photoUrl } from "../lib/api";
+import { getToilet, uploadToiletPhoto, photoUrl, friendlyUploadError } from "../lib/api";
 import { compressImage } from "../lib/imageCompress";
+import { CONFIG } from "../lib/config";
 import type { ToiletWithAuthor } from "../lib/types";
 
 function NewPhotoThumb({ file, onRemove }: { file: File; onRemove: () => void }) {
@@ -70,16 +71,23 @@ export function AddPhotosOnly() {
     setError(null);
     try {
       await withIdentity(async (profile) => {
-        for (const file of newPhotos) {
-          const compressed = await compressImage(file);
-          await uploadToiletPhoto(profile.id, id, compressed);
-        }
+        const queue = [...newPhotos];
+        const workers = Array.from(
+          { length: Math.min(CONFIG.wizard.photoUploadConcurrency, queue.length) },
+          async () => {
+            while (queue.length) {
+              const file = queue.shift()!;
+              const compressed = await compressImage(file);
+              await uploadToiletPhoto(profile.id, id, compressed);
+            }
+          }
+        );
+        await Promise.all(workers);
       });
       navigate(`/t/${id}`);
     } catch (err) {
       console.error(err);
-      const detail = err instanceof Error ? err.message : String(err);
-      setError(`Couldn't upload: ${detail}`);
+      setError(friendlyUploadError(err));
     } finally {
       setBusy(false);
     }
