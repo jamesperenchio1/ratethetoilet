@@ -98,11 +98,29 @@ export function useAuth() {
    * this is exactly "first post triggers ... once, ever" from the flow map.
    */
   const ensureIdentity = useCallback(async (): Promise<Profile> => {
-    const s = await ensureSession();
-    const existing = await loadProfile(s.user.id);
+    let s = await ensureSession();
+    let existing = await loadProfile(s.user.id);
     if (existing) return existing;
     const { data, error } = await supabase.rpc("ensure_profile");
-    if (error) throw error;
+    if (error) {
+      // If the anonymous session's auth.users row no longer exists (e.g. the
+      // database was reset), ensure_profile fails on the profiles FK. Drop the
+      // ghost session, mint a fresh anonymous user, and retry once.
+      if (s.user.is_anonymous && (error.code === "23503" || (error as { message?: string })?.message?.includes("profiles_id_fkey"))) {
+        await supabase.auth.signOut();
+        setSession(null);
+        setProfile(null);
+        s = await ensureSession();
+        existing = await loadProfile(s.user.id);
+        if (existing) return existing;
+        const retry = await supabase.rpc("ensure_profile");
+        if (retry.error) throw retry.error;
+        const row = retry.data as Profile;
+        setProfile(row);
+        return row;
+      }
+      throw error;
+    }
     const row = data as Profile;
     setProfile(row);
     return row;
