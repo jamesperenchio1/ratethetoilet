@@ -16,6 +16,7 @@ export function ToiletDetail() {
   const { withIdentity, profile } = useIdentity();
   const [toilet, setToilet] = useState<ToiletWithAuthor | null | undefined>(undefined);
   const [photoIndex, setPhotoIndex] = useState(0);
+  const [viewer, setViewer] = useState(false);
   const [report, setReport] = useState<{ type: ReportTargetType; id: string; label: string } | null>(
     null
   );
@@ -101,7 +102,7 @@ export function ToiletDetail() {
                 borderRadius: 6,
                 border: "1.5px solid var(--border-strong)",
               }}
-              onClick={() => setPhotoIndex((i) => (i + 1) % photos.length)}
+              onClick={() => setViewer(true)}
             />
             <span
               style={{ position: "absolute", right: 8, top: 8, fontSize: 11, color: "#fff", cursor: "pointer" }}
@@ -245,6 +246,79 @@ export function ToiletDetail() {
           contextLabel={report.label}
           onClose={() => setReport(null)}
         />
+      )}
+
+      {viewer && photos.length > 0 && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 30,
+            background: "rgba(0,0,0,.94)",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 10,
+          }}
+        >
+          <span
+            style={{
+              position: "absolute",
+              top: 12,
+              right: 14,
+              fontSize: 22,
+              color: "#fff",
+              cursor: "pointer",
+              lineHeight: 1,
+            }}
+            onClick={() => setViewer(false)}
+          >
+            ×
+          </span>
+          {photos.length > 1 && (
+            <span
+              style={{
+                position: "absolute",
+                left: 10,
+                top: "50%",
+                transform: "translateY(-50%)",
+                fontSize: 30,
+                color: "#fff",
+                cursor: "pointer",
+                padding: "0 6px",
+              }}
+              onClick={() => setPhotoIndex((i) => (i - 1 + photos.length) % photos.length)}
+            >
+              ‹
+            </span>
+          )}
+          {photos.length > 1 && (
+            <span
+              style={{
+                position: "absolute",
+                right: 10,
+                top: "50%",
+                transform: "translateY(-50%)",
+                fontSize: 30,
+                color: "#fff",
+                cursor: "pointer",
+                padding: "0 6px",
+              }}
+              onClick={() => setPhotoIndex((i) => (i + 1) % photos.length)}
+            >
+              ›
+            </span>
+          )}
+          <img
+            src={photoUrl(photos[photoIndex].storage_path)}
+            alt=""
+            style={{ maxWidth: "100%", maxHeight: "78vh", objectFit: "contain" }}
+          />
+          <span style={{ fontSize: 12, color: "#fff", fontFamily: "var(--font-mono)" }}>
+            {photoIndex + 1}/{photos.length} · {new Date(photos[photoIndex].created_at).toLocaleString()}
+          </span>
+        </div>
       )}
     </>
   );

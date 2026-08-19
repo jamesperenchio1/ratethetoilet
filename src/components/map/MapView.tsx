@@ -102,12 +102,15 @@ export function MapView({
       el.style.border = "1.5px solid rgba(255,255,255,.8)";
       el.style.boxShadow = "0 1px 3px rgba(0,0,0,.3)";
       el.style.cursor = "pointer";
-      el.style.maxWidth = "150px";
+      el.style.maxWidth = "180px";
       el.style.overflow = "hidden";
       el.style.textOverflow = "ellipsis";
       el.style.whiteSpace = "nowrap";
       if (pin.label) {
-        el.textContent = pin.count && pin.count > 1 ? `${pin.label} · ${pin.count}` : pin.label;
+        const parts = [pin.label];
+        if (pin.count && pin.count > 1) parts.push(String(pin.count));
+        if (pin.score != null) parts.push(String(pin.score));
+        el.textContent = parts.join(" · ");
       } else {
         el.textContent = pin.score == null ? "–" : String(pin.score);
       }
