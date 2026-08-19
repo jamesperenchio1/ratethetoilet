@@ -2,8 +2,48 @@ import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { TopBar } from "../components/layout/TopBar";
 import { useIdentity } from "../components/IdentityGateProvider";
-import { getToilet, uploadToiletPhoto } from "../lib/api";
+import { getToilet, uploadToiletPhoto, photoUrl } from "../lib/api";
 import type { ToiletWithAuthor } from "../lib/types";
+
+function NewPhotoThumb({ file, onRemove }: { file: File; onRemove: () => void }) {
+  const [objectUrl, setObjectUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    const url = URL.createObjectURL(file);
+    setObjectUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [file]);
+
+  return (
+    <div
+      className="img"
+      style={{ width: 56, height: 56, cursor: "pointer", position: "relative", overflow: "hidden" }}
+      onClick={onRemove}
+    >
+      {objectUrl && (
+        <img src={objectUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+      )}
+      <span
+        style={{
+          position: "absolute",
+          right: -5,
+          top: -5,
+          width: 18,
+          height: 18,
+          borderRadius: "50%",
+          background: "var(--ink-1)",
+          color: "#fff",
+          fontSize: 11,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        ✕
+      </span>
+    </div>
+  );
+}
 
 export function AddPhotosOnly() {
   const { id } = useParams<{ id: string }>();
@@ -12,6 +52,7 @@ export function AddPhotosOnly() {
   const [toilet, setToilet] = useState<ToiletWithAuthor | null>(null);
   const [newPhotos, setNewPhotos] = useState<File[]>([]);
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const cameraRef = useRef<HTMLInputElement>(null);
   const uploadRef = useRef<HTMLInputElement>(null);
 
@@ -25,6 +66,7 @@ export function AddPhotosOnly() {
   async function submit() {
     if (!id || newPhotos.length === 0) return;
     setBusy(true);
+    setError(null);
     try {
       await withIdentity(async (profile) => {
         for (const file of newPhotos) {
@@ -32,6 +74,9 @@ export function AddPhotosOnly() {
         }
       });
       navigate(`/t/${id}`);
+    } catch (err) {
+      console.error(err);
+      setError("Couldn't upload — check your connection and try again.");
     } finally {
       setBusy(false);
     }
@@ -51,7 +96,13 @@ export function AddPhotosOnly() {
         <div className="lbl">Already posted · {existing.length}</div>
         <div style={{ display: "flex", gap: 5 }}>
           {existing.map((p) => (
-            <div key={p.id} className="img" style={{ width: 56, height: 56 }} />
+            <div key={p.id} className="img" style={{ width: 56, height: 56, overflow: "hidden" }}>
+              <img
+                src={photoUrl(p.storage_path)}
+                alt=""
+                style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+              />
+            </div>
           ))}
         </div>
 
@@ -81,15 +132,12 @@ export function AddPhotosOnly() {
           </button>
         </div>
         <div style={{ display: "flex", gap: 5 }}>
-          {newPhotos.map((_, i) => (
-            <div
+          {newPhotos.map((file, i) => (
+            <NewPhotoThumb
               key={i}
-              className="img"
-              style={{ width: 56, height: 56, cursor: "pointer" }}
-              onClick={() => setNewPhotos((p) => p.filter((_, j) => j !== i))}
-            >
-              {i + 1} ✕
-            </div>
+              file={file}
+              onRemove={() => setNewPhotos((p) => p.filter((_, j) => j !== i))}
+            />
           ))}
         </div>
 
@@ -101,6 +149,12 @@ export function AddPhotosOnly() {
           Add {newPhotos.length || ""} photo{newPhotos.length === 1 ? "" : "s"}
         </button>
       </div>
+      {busy && <div className="toast">Uploading…</div>}
+      {error && !busy && (
+        <div className="toast" style={{ background: "var(--red-3)" }}>
+          {error}
+        </div>
+      )}
     </>
   );
 }
