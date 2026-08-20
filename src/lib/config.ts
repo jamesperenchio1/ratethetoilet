@@ -19,10 +19,16 @@ export const CONFIG = {
   map: {
     /** Fallback map center (Bangkok) used when device GPS is unavailable. */
     defaultCenter: { lat: 13.7563, lng: 100.5018 },
+    /** Cap for programmatic zoom (fitBounds/easeTo) so revisits don't dive into a cluster. */
+    maxZoom: 16,
     /** Escalating search radii for the nearby list (meters). */
     searchRadiiM: [3000, 15000, 60000],
     /** Collapsed height of the nearby sheet on Home (px). */
     sheetPeekPx: 132,
+    /** Screen distance (px) at/below which map pins are treated as overlapping. */
+    pinSpreadThresholdPx: 36,
+    /** Ring circumference budget per pin (px) when spreading an overlapping cluster. */
+    pinSpreadStepPx: 40,
     tileStyleUrl: "https://tiles.openfreemap.org/styles/liberty",
     /** Device geolocation request timeout (ms). */
     geolocationTimeoutMs: 8000,

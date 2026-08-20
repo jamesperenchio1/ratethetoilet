@@ -24,6 +24,68 @@ export interface MapPin {
 
 const OPENFREEMAP_STYLE = CONFIG.map.tileStyleUrl;
 const BANGKOK = CONFIG.map.defaultCenter;
+const MAX_ZOOM = CONFIG.map.maxZoom;
+const PIN_SPREAD_THRESHOLD_PX = CONFIG.map.pinSpreadThresholdPx;
+const PIN_SPREAD_STEP_PX = CONFIG.map.pinSpreadStepPx;
+
+// Spread overlapping pins out into a ring so toilets that are close together
+// (e.g. pins within a couple of houses of each other) stay individually
+// tappable instead of stacking on the same screen pixel. Pins within
+// PIN_SPREAD_THRESHOLD_PX screen-pixels of each other form a cluster; each
+// cluster is fanned out on a circle whose radius grows with cluster size.
+function applyPinSpread(map: MaplibreMap, markers: Marker[], pins: MapPin[]): void {
+  if (pins.length === 0 || markers.length !== pins.length) return;
+  const pos = pins.map((p) => map.project([p.lng, p.lat]));
+
+  // Union-find to cluster pins whose screen positions are within the threshold.
+  const parent = pins.map((_, i) => i);
+  const find = (a: number): number => (parent[a] === a ? a : (parent[a] = find(parent[a])));
+  const union = (a: number, b: number): void => {
+    const ra = find(a);
+    const rb = find(b);
+    if (ra !== rb) parent[rb] = ra;
+  };
+  const thresholdSq = PIN_SPREAD_THRESHOLD_PX * PIN_SPREAD_THRESHOLD_PX;
+  for (let i = 0; i < pos.length; i++) {
+    for (let j = i + 1; j < pos.length; j++) {
+      const dx = pos[i].x - pos[j].x;
+      const dy = pos[i].y - pos[j].y;
+      if (dx * dx + dy * dy <= thresholdSq) union(i, j);
+    }
+  }
+
+  const clusters = new Map<number, number[]>();
+  pos.forEach((_, i) => {
+    const root = find(i);
+    const members = clusters.get(root) ?? [];
+    members.push(i);
+    clusters.set(root, members);
+  });
+
+  for (const members of clusters.values()) {
+    if (members.length === 1) {
+      markers[members[0]].setOffset([0, 0]);
+      continue;
+    }
+    const n = members.length;
+    const cx = members.reduce((s, m) => s + pos[m].x, 0) / n;
+    const cy = members.reduce((s, m) => s + pos[m].y, 0) / n;
+    const radius = Math.max(
+      PIN_SPREAD_THRESHOLD_PX / 2 + 12,
+      (n * PIN_SPREAD_STEP_PX) / (2 * Math.PI)
+    );
+    members.sort(
+      (a, b) =>
+        Math.atan2(pos[a].y - cy, pos[a].x - cx) - Math.atan2(pos[b].y - cy, pos[b].x - cx)
+    );
+    members.forEach((m, k) => {
+      const angle = -Math.PI / 2 + (2 * Math.PI * k) / n;
+      const tx = cx + radius * Math.cos(angle);
+      const ty = cy + radius * Math.sin(angle);
+      markers[m].setOffset([tx - pos[m].x, ty - pos[m].y]);
+    });
+  }
+}
 
 export function MapView({
   pins = [],
@@ -35,6 +97,7 @@ export function MapView({
   onGpsClick,
   className,
   fitToPins = false,
+  maxZoom = MAX_ZOOM,
 }: {
   pins?: MapPin[];
   center?: { lat: number; lng: number };
@@ -46,10 +109,13 @@ export function MapView({
   className?: string;
   /** On first pin render, zoom the map out to frame every pin. */
   fitToPins?: boolean;
+  /** Cap for programmatic zoom (easeTo/fitBounds); manual pinch can go higher. */
+  maxZoom?: number;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MaplibreMap | null>(null);
   const markersRef = useRef<Marker[]>([]);
+  const pinsRef = useRef<MapPin[]>([]);
   const dragMarkerRef = useRef<Marker | null>(null);
   const fitDoneRef = useRef(false);
   const [loading, setLoading] = useState(true);
@@ -73,7 +139,12 @@ export function MapView({
       setFailed(true);
       return;
     }
-    map.once("load", () => setLoading(false));
+    const spread = () => applyPinSpread(map, markersRef.current, pinsRef.current);
+    map.on("move", spread);
+    map.once("load", () => {
+      setLoading(false);
+      spread();
+    });
     mapRef.current = map;
     return () => {
       map.remove();
@@ -85,8 +156,12 @@ export function MapView({
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !center) return;
-    map.easeTo({ center: [center.lng, center.lat], duration: 400 });
-  }, [center?.lat, center?.lng]);
+    map.easeTo({
+      center: [center.lng, center.lat],
+      zoom: Math.min(map.getZoom(), maxZoom),
+      duration: 400,
+    });
+  }, [center?.lat, center?.lng, maxZoom]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -119,16 +194,18 @@ export function MapView({
         .setLngLat([pin.lng, pin.lat])
         .addTo(map);
     });
+    pinsRef.current = pins;
+    applyPinSpread(map, markersRef.current, pins);
     if (fitToPins && !fitDoneRef.current && pins.length > 0) {
       const bounds = new LngLatBounds();
       pins.forEach((p) => bounds.extend([p.lng, p.lat]));
-      map.fitBounds(bounds, { padding: 60, duration: 500 });
+      map.fitBounds(bounds, { padding: 60, duration: 500, maxZoom });
       fitDoneRef.current = true;
     }
     return () => {
       markersRef.current.forEach((m) => m.remove());
     };
-  }, [pins, onPinClick, fitToPins]);
+  }, [pins, onPinClick, fitToPins, maxZoom]);
 
   useEffect(() => {
     const map = mapRef.current;

@@ -229,7 +229,7 @@ export async function uploadToiletPhoto(
   file: File | Blob
 ): Promise<ToiletPhoto> {
   const path = await storageUpload(
-    () => `${toiletId}/${crypto.randomUUID()}.data`,
+    () => `${toiletId}/${crypto.randomUUID()}.jpg`,
     file
   );
 
@@ -248,7 +248,7 @@ export async function uploadDraftPhoto(
   file: File | Blob
 ): Promise<string> {
   const path = await storageUpload(
-    () => `draft/${draftId}/${localId}-${crypto.randomUUID()}.data`,
+    () => `draft/${draftId}/${localId}-${crypto.randomUUID()}.jpg`,
     file
   );
   return path;
