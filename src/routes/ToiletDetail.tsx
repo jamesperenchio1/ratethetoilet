@@ -6,6 +6,8 @@ import { getToilet, addReview, photoUrl, deleteOwnToilet } from "../lib/api";
 import { enqueuePost } from "../lib/offlineQueue";
 import { accessTypesLabel, venueTypesLabel } from "../lib/labels";
 import { scoreColor } from "../lib/score";
+import { CONFIG } from "../lib/config";
+import { getTurnstileToken } from "../lib/turnstile";
 import type { ToiletWithAuthor, ReportTargetType } from "../lib/types";
 import { useIdentity } from "../components/IdentityGateProvider";
 import { ExternalIcon } from "../components/layout/NavIcons";
@@ -24,11 +26,23 @@ export function ToiletDetail() {
   const [posting, setPosting] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [loadError, setLoadError] = useState(false);
 
-  async function load() {
+  async function load(attempt = 0) {
     if (!id) return;
-    const t = await getToilet(id);
-    setToilet(t);
+    try {
+      const t = await getToilet(id);
+      setToilet(t);
+      setLoadError(false);
+    } catch {
+      // A couple of quiet auto-retries handle a blip; only surface the error
+      // state (and a manual retry) if it's still failing after that.
+      if (attempt < 2) {
+        await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
+        return load(attempt + 1);
+      }
+      setLoadError(true);
+    }
   }
 
   useEffect(() => {
@@ -36,6 +50,17 @@ export function ToiletDetail() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
+  if (loadError) {
+    return (
+      <div className="screen-body center-empty">
+        <b style={{ color: "var(--text-primary)" }}>Couldn't load this toilet.</b>
+        <span style={{ color: "var(--text-muted)" }}>Check your connection and try again.</span>
+        <button className="btn" style={{ width: "auto", padding: "11px 20px" }} onClick={() => load()}>
+          Retry
+        </button>
+      </div>
+    );
+  }
   if (toilet === undefined) return <div className="screen-body">Loading…</div>;
   if (toilet === null) return <div className="screen-body">Not found.</div>;
 
@@ -46,6 +71,7 @@ export function ToiletDetail() {
     if (!id || !reviewText.trim() || posting) return;
     setPosting(true);
     try {
+      if (navigator.onLine) await getTurnstileToken();
       await withIdentity(async (p) => {
         if (!navigator.onLine) {
           await enqueuePost("review", { toiletId: id, body: reviewText.trim() });
@@ -194,8 +220,12 @@ export function ToiletDetail() {
             onChange={(e) => setReviewText(e.target.value)}
             placeholder="What did you notice?"
             rows={3}
+            maxLength={CONFIG.wizard.reviewMaxLength}
             style={{ border: "none", resize: "none", fontSize: 13 }}
           />
+          <div style={{ fontSize: 11, color: "var(--text-muted)", textAlign: "right" }}>
+            {reviewText.length}/{CONFIG.wizard.reviewMaxLength}
+          </div>
           <button className="btn" onClick={submitReview} disabled={!reviewText.trim() || posting}>
             {posting ? "Posting…" : `Post review${profile ? ` as ${profile.handle}` : ""}`}
           </button>

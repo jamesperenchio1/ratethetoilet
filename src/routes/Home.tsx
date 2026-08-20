@@ -23,6 +23,8 @@ export function Home() {
   const navCenter = (location.state as { center?: { lat: number; lng: number } } | null)?.center;
   const [center, setCenter] = useState(navCenter ?? BANGKOK);
   const [toilets, setToilets] = useState<Toilet[] | null>(null);
+  const [toiletsError, setToiletsError] = useState(false);
+  const [retryTick, setRetryTick] = useState(0);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [sheetExpanded, setSheetExpanded] = useState(false);
   const dragStartY = useRef<number | null>(null);
@@ -60,17 +62,32 @@ export function Home() {
   useEffect(() => {
     let cancelled = false;
     // Fetch every non-hidden toilet once; distance-sorting happens client-side.
-    listAllToilets()
-      .then((rows) => {
-        if (!cancelled) setToilets(rows);
-      })
-      .catch(() => {
-        if (!cancelled) setToilets([]);
-      });
+    // A couple of quiet auto-retries handle a network blip; only surface the
+    // error banner if it's still failing after that.
+    async function load(attempt = 0) {
+      try {
+        const rows = await listAllToilets();
+        if (!cancelled) {
+          setToilets(rows);
+          setToiletsError(false);
+        }
+      } catch {
+        if (cancelled) return;
+        if (attempt < 2) {
+          await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
+          if (!cancelled) return load(attempt + 1);
+          return;
+        }
+        setToilets([]);
+        setToiletsError(true);
+      }
+    }
+    setToiletsError(false);
+    load();
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [retryTick]);
 
   const filtered = useMemo(() => {
     if (!toilets) return [];
@@ -116,6 +133,8 @@ export function Home() {
 
         <div
           className="home-search"
+          role="button"
+          tabIndex={0}
           style={{
             position: "absolute",
             top: 8,
@@ -132,6 +151,7 @@ export function Home() {
             zIndex: 3,
           }}
           onClick={() => navigate("/search")}
+          onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && navigate("/search")}
         >
           Search a place or venue
         </div>
@@ -139,22 +159,33 @@ export function Home() {
         <div className="home-filters" style={{ position: "absolute", top: 50, left: 8, right: 8, display: "flex", gap: 6, overflowX: "auto", zIndex: 3 }}>
           <span
             className={`chip ${filters.freeOnly ? "on" : ""}`}
+            role="button"
+            tabIndex={0}
+            aria-pressed={filters.freeOnly}
             style={{ boxShadow: "0 1px 3px rgba(0,0,0,.15)" }}
             onClick={() => setFilters((f) => ({ ...f, freeOnly: !f.freeOnly }))}
+            onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && setFilters((f) => ({ ...f, freeOnly: !f.freeOnly }))}
           >
             Free
           </span>
           <span
             className={`chip ${filters.wheelchairOnly ? "on" : ""}`}
+            role="button"
+            tabIndex={0}
+            aria-pressed={filters.wheelchairOnly}
             style={{ boxShadow: "0 1px 3px rgba(0,0,0,.15)" }}
             onClick={() => setFilters((f) => ({ ...f, wheelchairOnly: !f.wheelchairOnly }))}
+            onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && setFilters((f) => ({ ...f, wheelchairOnly: !f.wheelchairOnly }))}
           >
             Wheelchair
           </span>
           <span
             className={`chip ${filters.minScore >= CONFIG.score.color.great ? "on" : ""}`}
+            role="button"
+            tabIndex={0}
             style={{ boxShadow: "0 1px 3px rgba(0,0,0,.15)" }}
             onClick={() => setFiltersOpen(true)}
+            onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && setFiltersOpen(true)}
           >
             Filters
           </span>
@@ -163,7 +194,11 @@ export function Home() {
         {!sheetExpanded && (
           <span
             className="home-add"
+            role="button"
+            tabIndex={0}
+            aria-label="Add a toilet"
             onClick={() => navigate("/add")}
+            onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && navigate("/add")}
             style={{
               position: "absolute",
               right: 8,
@@ -228,7 +263,20 @@ export function Home() {
           </div>
 
           <div className="screen-body" style={{ paddingTop: 2 }}>
-            {toilets && withDistance.length === 0 && toilets.length === 0 && (
+            {toiletsError && (
+              <div className="center-empty">
+                <b style={{ color: "var(--text-primary)" }}>Couldn't load toilets.</b>
+                <span style={{ color: "var(--text-muted)" }}>Check your connection and try again.</span>
+                <button
+                  className="btn"
+                  style={{ width: "auto", padding: "11px 20px" }}
+                  onClick={() => setRetryTick((n) => n + 1)}
+                >
+                  Retry
+                </button>
+              </div>
+            )}
+            {!toiletsError && toilets && withDistance.length === 0 && toilets.length === 0 && (
               <div className="center-empty">
                 <b style={{ color: "var(--text-primary)" }}>Nobody has mapped anything yet.</b>
                 <button className="btn" style={{ width: "auto", padding: "11px 20px" }} onClick={() => navigate("/add")}>

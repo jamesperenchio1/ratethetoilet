@@ -18,6 +18,25 @@ const JPEG_QUALITY = 0.82;
 /** Origins above this size are always re-encoded even if the JPEG is slightly
  * larger than the source (still a net win vs. shipping a huge original). */
 const ALWAYS_REENCODE_BYTES = 1_000_000;
+/** Hard cap on the *input* before we even attempt to decode it. A phone photo
+ * is a few MB; anything past this is either not a photo or big enough that
+ * createImageBitmap/canvas decode could burn real time/memory for nothing —
+ * reject it outright instead of shipping it uncompressed. */
+export const MAX_INPUT_BYTES = 30_000_000;
+
+export class ImageTooLargeError extends Error {
+  constructor() {
+    super("Photo is too large (over 30MB).");
+    this.name = "ImageTooLargeError";
+  }
+}
+
+export interface CompressResult {
+  file: File;
+  /** True when compression failed and `file` is still the original — the
+   * caller should let the user know a large file is about to be uploaded. */
+  fellBackToOriginal: boolean;
+}
 
 function loadImage(file: File): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
@@ -55,7 +74,10 @@ function reencodedName(file: File): string {
   return file.name.replace(/\.[^.]+$/, "") + ".jpg";
 }
 
-export async function compressImage(file: File): Promise<File> {
+export async function compressImage(file: File): Promise<CompressResult> {
+  if (file.size > MAX_INPUT_BYTES) {
+    throw new ImageTooLargeError();
+  }
   try {
     let blob: Blob | null = null;
 
@@ -91,12 +113,17 @@ export async function compressImage(file: File): Promise<File> {
     }
 
     if (blob && (blob.size < file.size || file.size > ALWAYS_REENCODE_BYTES)) {
-      return new File([blob], reencodedName(file), { type: "image/jpeg" });
+      return {
+        file: new File([blob], reencodedName(file), { type: "image/jpeg" }),
+        fellBackToOriginal: false,
+      };
     }
-    return file;
-  } catch {
+    return { file, fellBackToOriginal: false };
+  } catch (err) {
     // Any failure here (unsupported codec, low-memory decode failure, etc.)
-    // falls back to the original file rather than blocking the upload.
-    return file;
+    // falls back to the original file rather than blocking the upload —
+    // callers should warn the user when the original is large.
+    console.warn("Image compression failed, uploading original file", err);
+    return { file, fellBackToOriginal: true };
   }
 }

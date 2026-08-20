@@ -120,14 +120,17 @@ export async function listToiletsNear(
   return (data as Toilet[]) ?? [];
 }
 
-/** Every non-hidden toilet in the database. The app is small; the client
- * sorts by distance to the current view center. */
+/** Every non-hidden toilet in the database, capped at CONFIG.api.allToiletsLimit
+ * (newest first). The client sorts by distance to the current view center.
+ * Fine for a small app; once the table regularly hits the cap this needs to
+ * become a real viewport-bounded query instead. */
 export async function listAllToilets(): Promise<Toilet[]> {
   const { data, error } = await supabase
     .from("toilets")
     .select("*")
     .eq("hidden", false)
-    .order("created_at", { ascending: true });
+    .order("created_at", { ascending: false })
+    .limit(CONFIG.api.allToiletsLimit);
   if (error) throw error;
   return (data as Toilet[]) ?? [];
 }

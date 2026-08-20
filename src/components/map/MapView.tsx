@@ -46,13 +46,35 @@ function applyPinSpread(map: MaplibreMap, markers: Marker[], pins: MapPin[]): vo
     if (ra !== rb) parent[rb] = ra;
   };
   const thresholdSq = PIN_SPREAD_THRESHOLD_PX * PIN_SPREAD_THRESHOLD_PX;
-  for (let i = 0; i < pos.length; i++) {
-    for (let j = i + 1; j < pos.length; j++) {
-      const dx = pos[i].x - pos[j].x;
-      const dy = pos[i].y - pos[j].y;
-      if (dx * dx + dy * dy <= thresholdSq) union(i, j);
+
+  // Bucket pins into a grid of threshold-sized cells so we only pairwise-compare
+  // pins that could plausibly be within the threshold of each other (their own
+  // cell + the 8 neighbors), instead of every pin against every other pin.
+  // Degrades to the old O(n^2) only if most pins land in one cell, which is
+  // exactly the case where n is small anyway (it's a spread cluster).
+  const grid = new Map<string, number[]>();
+  pos.forEach((p, i) => {
+    const key = `${Math.floor(p.x / PIN_SPREAD_THRESHOLD_PX)},${Math.floor(p.y / PIN_SPREAD_THRESHOLD_PX)}`;
+    const bucket = grid.get(key);
+    if (bucket) bucket.push(i);
+    else grid.set(key, [i]);
+  });
+  pos.forEach((p, i) => {
+    const cx = Math.floor(p.x / PIN_SPREAD_THRESHOLD_PX);
+    const cy = Math.floor(p.y / PIN_SPREAD_THRESHOLD_PX);
+    for (let dx = -1; dx <= 1; dx++) {
+      for (let dy = -1; dy <= 1; dy++) {
+        const neighbors = grid.get(`${cx + dx},${cy + dy}`);
+        if (!neighbors) continue;
+        for (const j of neighbors) {
+          if (j <= i) continue;
+          const ddx = pos[i].x - pos[j].x;
+          const ddy = pos[i].y - pos[j].y;
+          if (ddx * ddx + ddy * ddy <= thresholdSq) union(i, j);
+        }
+      }
     }
-  }
+  });
 
   const clusters = new Map<number, number[]>();
   pos.forEach((_, i) => {
@@ -115,7 +137,12 @@ export function MapView({
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MaplibreMap | null>(null);
   const markersRef = useRef<Marker[]>([]);
+  const markersMapRef = useRef<Map<string, Marker>>(new Map());
   const pinsRef = useRef<MapPin[]>([]);
+  const onPinClickRef = useRef(onPinClick);
+  useEffect(() => {
+    onPinClickRef.current = onPinClick;
+  }, [onPinClick]);
   const dragMarkerRef = useRef<Marker | null>(null);
   const fitDoneRef = useRef(false);
   const [loading, setLoading] = useState(true);
@@ -139,16 +166,27 @@ export function MapView({
       setFailed(true);
       return;
     }
-    const spread = () => applyPinSpread(map, markersRef.current, pinsRef.current);
+    // rAF-throttled: "move" fires on every pan/zoom frame, and re-clustering
+    // on each one is wasted work once a frame is already queued.
+    let rafId: number | null = null;
+    const spread = () => {
+      if (rafId != null) return;
+      rafId = requestAnimationFrame(() => {
+        rafId = null;
+        applyPinSpread(map, markersRef.current, pinsRef.current);
+      });
+    };
     map.on("move", spread);
     map.once("load", () => {
       setLoading(false);
-      spread();
+      applyPinSpread(map, markersRef.current, pinsRef.current);
     });
     mapRef.current = map;
     return () => {
+      if (rafId != null) cancelAnimationFrame(rafId);
       map.remove();
       mapRef.current = null;
+      markersMapRef.current.clear();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -166,9 +204,18 @@ export function MapView({
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
-    markersRef.current.forEach((m) => m.remove());
-    markersRef.current = pins.map((pin) => {
-      const el = document.createElement("div");
+
+    function labelFor(pin: MapPin): string {
+      if (pin.label) {
+        const parts = [pin.label];
+        if (pin.count && pin.count > 1) parts.push(String(pin.count));
+        if (pin.score != null) parts.push(String(pin.score));
+        return parts.join(" · ");
+      }
+      return pin.score == null ? "–" : String(pin.score);
+    }
+
+    function styleEl(el: HTMLDivElement, pin: MapPin) {
       el.style.background = scoreColor(pin.score);
       el.style.color = "#fff";
       el.style.font = "600 11px 'IBM Plex Mono', monospace";
@@ -181,19 +228,50 @@ export function MapView({
       el.style.overflow = "hidden";
       el.style.textOverflow = "ellipsis";
       el.style.whiteSpace = "nowrap";
-      if (pin.label) {
-        const parts = [pin.label];
-        if (pin.count && pin.count > 1) parts.push(String(pin.count));
-        if (pin.score != null) parts.push(String(pin.score));
-        el.textContent = parts.join(" · ");
-      } else {
-        el.textContent = pin.score == null ? "–" : String(pin.score);
+      el.textContent = labelFor(pin);
+      el.setAttribute(
+        "aria-label",
+        `${pin.label ? pin.label + ", " : ""}${pin.score == null ? "unrated" : `score ${pin.score}`}`
+      );
+    }
+
+    // Diff against the existing marker set instead of tearing every marker
+    // down and recreating it on each change — filter toggles etc. used to
+    // rebuild the whole DOM set even when most pins were unchanged.
+    const existing = markersMapRef.current;
+    const nextIds = new Set(pins.map((p) => p.id));
+    for (const [id, marker] of existing) {
+      if (!nextIds.has(id)) {
+        marker.remove();
+        existing.delete(id);
       }
-      el.addEventListener("click", () => onPinClick?.(pin.id));
-      return new Marker({ element: el })
-        .setLngLat([pin.lng, pin.lat])
-        .addTo(map);
-    });
+    }
+    for (const pin of pins) {
+      const current = existing.get(pin.id);
+      if (current) {
+        current.setLngLat([pin.lng, pin.lat]);
+        styleEl(current.getElement() as HTMLDivElement, pin);
+        continue;
+      }
+      const el = document.createElement("div");
+      el.setAttribute("role", "button");
+      el.tabIndex = 0;
+      styleEl(el, pin);
+      const activate = () => onPinClickRef.current?.(pin.id);
+      el.addEventListener("click", activate);
+      el.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          activate();
+        }
+      });
+      existing.set(
+        pin.id,
+        new Marker({ element: el }).setLngLat([pin.lng, pin.lat]).addTo(map)
+      );
+    }
+
+    markersRef.current = pins.map((p) => existing.get(p.id)!);
     pinsRef.current = pins;
     applyPinSpread(map, markersRef.current, pins);
     if (fitToPins && !fitDoneRef.current && pins.length > 0) {
@@ -202,10 +280,7 @@ export function MapView({
       map.fitBounds(bounds, { padding: 60, duration: 500, maxZoom });
       fitDoneRef.current = true;
     }
-    return () => {
-      markersRef.current.forEach((m) => m.remove());
-    };
-  }, [pins, onPinClick, fitToPins, maxZoom]);
+  }, [pins, fitToPins, maxZoom]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -269,6 +344,7 @@ export function MapView({
       {onGpsClick && (
         <button
           onClick={onGpsClick}
+          aria-label="Center map on my location"
           style={{
             position: "absolute",
             right: 8,

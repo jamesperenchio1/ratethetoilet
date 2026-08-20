@@ -68,6 +68,31 @@ textarea {
   }
 }
 
+/* Very wide screens: cap the app so the map doesn't stretch edge-to-edge on
+   a desktop monitor — same two-panel layout, just centered with breathing
+   room instead of filling arbitrary width. */
+@media (min-width: 1400px) {
+  .app-shell {
+    max-width: 1400px;
+    border-left: var(--border-w) solid var(--border-strong);
+    border-right: var(--border-w) solid var(--border-strong);
+  }
+}
+
+/* Small phones: tighten padding/type a touch so nothing crowds the edges. */
+@media (max-width: 360px) {
+  .screen-body {
+    padding: 8px;
+    gap: 8px;
+  }
+  .btn,
+  .btn2,
+  .ghost {
+    padding: 10px;
+    font-size: 12.5px;
+  }
+}
+
 .topbar {
   height: 52px;
   flex: none;

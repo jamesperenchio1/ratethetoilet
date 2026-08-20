@@ -5,6 +5,7 @@ import { useIdentity } from "../../components/IdentityGateProvider";
 import { canPost, createToilet, attachDraftPhotos, findOrCreateVenue, addReview, type NewToiletInput } from "../../lib/api";
 import { enqueuePost } from "../../lib/offlineQueue";
 import { emptyDraft, type FloorEntry, type ToiletDraft } from "./types";
+import { getTurnstileToken } from "../../lib/turnstile";
 import { saveWizardState, loadWizardState, clearWizardState, type PersistableStep } from "./persist";
 import type { Toilet } from "../../lib/types";
 import { StepPhotos } from "./StepPhotos";
@@ -142,6 +143,10 @@ export function AddToiletWizard() {
     setSubmitting(true);
     setSubmitError(null);
     try {
+      // Invisible challenge — a no-op unless VITE_TURNSTILE_SITE_KEY is set,
+      // and never blocks the submit itself (see getTurnstileToken doc).
+      if (navigator.onLine) await getTurnstileToken();
+
       if (profile) {
         const { allowed, retryAt: r } = await canPost();
         if (!allowed) {
