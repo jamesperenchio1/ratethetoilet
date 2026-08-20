@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { TopBar } from "../../components/layout/TopBar";
 import { useIdentity } from "../../components/IdentityGateProvider";
 import { canPost, createToilet, attachDraftPhotos, findOrCreateVenue, addReview, type NewToiletInput } from "../../lib/api";
@@ -52,9 +52,23 @@ function floorLabel(entry: FloorEntry): string {
 
 export function AddToiletWizard() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { withIdentity, ensureSession, profile } = useIdentity();
   const restored = loadWizardState();
-  const [draft, setDraft] = useState<ToiletDraft>(restored?.draft ?? emptyDraft());
+  const navPrefill = location.state as
+    | { center?: { lat: number; lng: number }; venueName?: string }
+    | null;
+  const [draft, setDraft] = useState<ToiletDraft>(() => {
+    if (restored?.draft) return restored.draft;
+    const d = emptyDraft();
+    if (navPrefill?.center) {
+      d.lat = navPrefill.center.lat;
+      d.lng = navPrefill.center.lng;
+      d.locationSource = "search";
+      d.venueName = navPrefill.venueName ?? null;
+    }
+    return d;
+  });
   const [step, setStep] = useState<Step>(restored?.step ?? "photos");
   const [floorIdx, setFloorIdx] = useState(restored?.floorIdx ?? 0);
   const [posted, setPosted] = useState<Toilet | null>(null);

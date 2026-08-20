@@ -20,8 +20,12 @@ const SHEET_PEEK = CONFIG.map.sheetPeekPx;
 export function Home() {
   const navigate = useNavigate();
   const location = useLocation();
-  const navCenter = (location.state as { center?: { lat: number; lng: number } } | null)?.center;
+  const navState = location.state as
+    | { center?: { lat: number; lng: number }; marker?: { lat: number; lng: number; name: string } }
+    | null;
+  const navCenter = navState?.center;
   const [center, setCenter] = useState(navCenter ?? BANGKOK);
+  const [placeMarker, setPlaceMarker] = useState(navState?.marker ?? null);
   const [toilets, setToilets] = useState<Toilet[] | null>(null);
   const [toiletsError, setToiletsError] = useState(false);
   const [retryTick, setRetryTick] = useState(0);
@@ -129,6 +133,8 @@ export function Home() {
           fitToPins={!hadNavCenter.current}
           onPinClick={(id) => navigate(`/t/${id}`)}
           onGpsClick={() => locateDevice().then(setCenter).catch(() => {})}
+          draggableMarker={placeMarker ?? undefined}
+          onDraggableMarkerMove={(pos) => setPlaceMarker((m) => (m ? { ...m, ...pos } : m))}
         />
 
         <div
@@ -150,10 +156,10 @@ export function Home() {
             boxShadow: "0 1px 4px rgba(0,0,0,.15)",
             zIndex: 3,
           }}
-          onClick={() => navigate("/search")}
-          onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && navigate("/search")}
+          onClick={() => navigate("/search", { state: { center } })}
+          onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && navigate("/search", { state: { center } })}
         >
-          Search a place or venue
+          {placeMarker ? placeMarker.name : "Search a place or venue"}
         </div>
 
         <div className="home-filters" style={{ position: "absolute", top: 50, left: 8, right: 8, display: "flex", gap: 6, overflowX: "auto", zIndex: 3 }}>
@@ -190,6 +196,49 @@ export function Home() {
             Filters
           </span>
         </div>
+
+        {placeMarker && !sheetExpanded && (
+          <div
+            style={{
+              position: "absolute",
+              left: 8,
+              bottom: SHEET_PEEK + 10,
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              background: "var(--surface-card)",
+              border: "1.5px solid var(--border-strong)",
+              borderRadius: 999,
+              padding: "6px 6px 6px 14px",
+              fontSize: 12,
+              boxShadow: "0 1px 4px rgba(0,0,0,.25)",
+              zIndex: 3,
+            }}
+          >
+            <span
+              role="button"
+              tabIndex={0}
+              style={{ color: "var(--chart-4)", cursor: "pointer" }}
+              onClick={() => navigate("/add", { state: { center: placeMarker, venueName: placeMarker.name } })}
+              onKeyDown={(e) =>
+                (e.key === "Enter" || e.key === " ") &&
+                navigate("/add", { state: { center: placeMarker, venueName: placeMarker.name } })
+              }
+            >
+              + Add toilet here
+            </span>
+            <span
+              role="button"
+              tabIndex={0}
+              aria-label="Dismiss searched place"
+              style={{ color: "var(--text-muted)", cursor: "pointer", padding: "0 4px" }}
+              onClick={() => setPlaceMarker(null)}
+              onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && setPlaceMarker(null)}
+            >
+              ×
+            </span>
+          </div>
+        )}
 
         {!sheetExpanded && (
           <span
