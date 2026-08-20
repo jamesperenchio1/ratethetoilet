@@ -33,6 +33,7 @@ export function Home() {
   const [sheetExpanded, setSheetExpanded] = useState(false);
   const dragStartY = useRef<number | null>(null);
   const hadNavCenter = useRef(!!navCenter);
+  const [gpsFailed, setGpsFailed] = useState(false);
   const [filters, setFilters] = useState<Filters>({
     freeOnly: false,
     wheelchairOnly: false,
@@ -59,7 +60,7 @@ export function Home() {
     locateDevice()
       .then(setCenter)
       .catch(() => {
-        /* fall back to Bangkok center */
+        setGpsFailed(true);
       });
   }, []);
 
@@ -132,7 +133,14 @@ export function Home() {
           center={center}
           fitToPins={!hadNavCenter.current}
           onPinClick={(id) => navigate(`/t/${id}`)}
-          onGpsClick={() => locateDevice().then(setCenter).catch(() => {})}
+          onGpsClick={() =>
+            locateDevice()
+              .then((c) => {
+                setCenter(c);
+                setGpsFailed(false);
+              })
+              .catch(() => setGpsFailed(true))
+          }
           draggableMarker={placeMarker ?? undefined}
           onDraggableMarkerMove={(pos) => setPlaceMarker((m) => (m ? { ...m, ...pos } : m))}
         />
@@ -196,6 +204,48 @@ export function Home() {
             Filters
           </span>
         </div>
+
+        {gpsFailed && (
+          <div
+            style={{
+              position: "absolute",
+              top: 92,
+              left: 8,
+              right: 8,
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              background: "var(--surface-card)",
+              border: "1.5px solid var(--border-strong)",
+              borderRadius: 4,
+              padding: "8px 10px",
+              fontSize: 13,
+              color: "var(--text-primary)",
+              boxShadow: "0 1px 4px rgba(0,0,0,.15)",
+              zIndex: 3,
+            }}
+          >
+            <span style={{ flex: 1 }}>
+              Couldn't pinpoint you — showing all toilets, nearest first. Tap{" "}
+              <b>GPS</b> to retry.
+            </span>
+            <button
+              onClick={() => setGpsFailed(false)}
+              style={{
+                background: "none",
+                border: "none",
+                fontSize: 15,
+                lineHeight: 1,
+                color: "var(--text-muted)",
+                cursor: "pointer",
+                padding: 2,
+              }}
+              aria-label="Dismiss"
+            >
+              ✕
+            </button>
+          </div>
+        )}
 
         {placeMarker && !sheetExpanded && (
           <div

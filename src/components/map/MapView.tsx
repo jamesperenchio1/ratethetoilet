@@ -371,11 +371,20 @@ export function locateDevice(): Promise<{ lat: number; lng: number }> {
       reject(new Error("Geolocation not available"));
       return;
     }
-    navigator.geolocation.getCurrentPosition(
-      (pos) =>
-        resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-      (err) => reject(err),
-      { enableHighAccuracy: true, timeout: CONFIG.map.geolocationTimeoutMs }
-    );
+    const attempt = (enableHighAccuracy: boolean) =>
+      navigator.geolocation.getCurrentPosition(
+        (pos) =>
+          resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+        (err) => {
+          if (enableHighAccuracy) attempt(false);
+          else reject(err);
+        },
+        {
+          enableHighAccuracy,
+          timeout: CONFIG.map.geolocationTimeoutMs,
+          maximumAge: enableHighAccuracy ? 0 : 60000,
+        }
+      );
+    attempt(true);
   });
 }
