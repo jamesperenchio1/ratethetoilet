@@ -1,9 +1,30 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import * as Sentry from "@sentry/react";
 import { TopBar } from "../components/layout/TopBar";
 import { useIdentity } from "../components/IdentityGateProvider";
 import { supabase } from "../lib/supabase";
 import { CONFIG } from "../lib/config";
+
+/** Temporary — verifies Sentry is wired up. Only rendered when a DSN is
+ * configured, so it's invisible unless you're actively testing. Safe to
+ * remove once you've confirmed an event landed in Sentry. */
+function SentryTestButton() {
+  return (
+    <button
+      className="btn2"
+      onClick={() => {
+        Sentry.logger.info("User triggered test error", {
+          action: "test_error_button_click",
+        });
+        Sentry.metrics.count("test_counter", 1);
+        throw new Error("This is your first error!");
+      }}
+    >
+      Break the world (Sentry test)
+    </button>
+  );
+}
 
 export function Settings() {
   const navigate = useNavigate();
@@ -92,6 +113,13 @@ export function Settings() {
           <span>Install RateTheToilet</span>
           <span style={{ fontSize: 11, color: "var(--chart-4)" }}>Add to home screen</span>
         </div>
+
+        {import.meta.env.VITE_SENTRY_DSN && (
+          <>
+            <div className="lbl">Debug</div>
+            <SentryTestButton />
+          </>
+        )}
 
         <div className="lbl">Data</div>
         {!confirmDelete ? (

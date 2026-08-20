@@ -55,6 +55,7 @@ export function AddPhotosOnly() {
   const [newPhotos, setNewPhotos] = useState<File[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [warning, setWarning] = useState<string | null>(null);
   const cameraRef = useRef<HTMLInputElement>(null);
   const uploadRef = useRef<HTMLInputElement>(null);
 
@@ -69,7 +70,9 @@ export function AddPhotosOnly() {
     if (!id || newPhotos.length === 0) return;
     setBusy(true);
     setError(null);
+    setWarning(null);
     try {
+      let anyFellBack = false;
       await withIdentity(async (profile) => {
         const queue = [...newPhotos];
         const workers = Array.from(
@@ -77,13 +80,18 @@ export function AddPhotosOnly() {
           async () => {
             while (queue.length) {
               const file = queue.shift()!;
-              const compressed = await compressImage(file);
+              const { file: compressed, fellBackToOriginal } = await compressImage(file);
+              if (fellBackToOriginal && file.size > 3_000_000) anyFellBack = true;
               await uploadToiletPhoto(profile.id, id, compressed);
             }
           }
         );
         await Promise.all(workers);
       });
+      if (anyFellBack) {
+        setWarning("Some photos couldn't be shrunk and uploaded at full size.");
+        await new Promise((r) => setTimeout(r, 1500));
+      }
       navigate(`/t/${id}`);
     } catch (err) {
       console.error(err);
@@ -165,6 +173,9 @@ export function AddPhotosOnly() {
         <div className="toast" style={{ background: "var(--red-3)" }}>
           {error}
         </div>
+      )}
+      {warning && !error && (
+        <div className="toast">{warning}</div>
       )}
     </>
   );

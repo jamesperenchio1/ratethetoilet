@@ -26,3 +26,6 @@ dist-ssr
 *.sw?
 .vercel
 .playwright-mcp/
+
+# DB dumps from supabase/backup.sh — never commit real data.
+/backups/

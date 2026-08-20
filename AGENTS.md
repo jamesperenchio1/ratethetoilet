@@ -6,8 +6,8 @@ Single-page React 19 + Vite + TypeScript PWA (toilet finder, Bangkok). All backe
 
 - `npm run dev` — dev server (requires `.env.local`, see below)
 - `npm run lint` — **oxlint**, not eslint (config: `.oxlintrc.json`)
-- `npm run build` — `tsc -b && vite build`. This is the typecheck; there is no separate typecheck script. Run `npm run lint && npm run build` as the verification step.
-- **No tests exist.** No test framework is installed; don't go looking for one.
+- `npm run build` — `tsc -b && vite build`. This is the typecheck; there is no separate typecheck script.
+- `npm test` — **vitest**, unit tests for pure `src/lib/*` logic only (no component/integration tests). Run `npm run lint && npm test && npm run build` as the verification step.
 
 ## Environment
 

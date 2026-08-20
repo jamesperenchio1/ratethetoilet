@@ -40,6 +40,10 @@ export const CONFIG = {
     /** Default slider value for cleanliness/smell/privacy. */
     defaultScore: 50,
     venueNameMaxLength: 120,
+    /** Mirrors the `char_length(body) between 1 and 500` check on reviews. */
+    reviewMaxLength: 500,
+    /** Mirrors the `hint_note_length` check added in 0006_audit_hardening.sql. */
+    hintNoteMaxLength: 2000,
     supplies: ["Paper", "Hose", "Bring your own", "Not sure"],
     floorPresets: ["G", "1", "2", "3", "B1", "B2"],
     hintChips: [
@@ -120,6 +124,9 @@ export const CONFIG = {
     searchLimit: 20,
     /** Mirrors the `limit` in the toilets_near() RPC. */
     nearbyLimit: 200,
+    /** Hard cap on listAllToilets() — loose on purpose (the app is small),
+     * but an unbounded "select *" isn't safe to leave in forever. */
+    allToiletsLimit: 3000,
     /** Posts (toilets + reviews combined) per rolling hour. SQL mirror above. */
     postRateLimitPerHour: 10,
     /** Nominatim geocoding fetch timeout (ms). */

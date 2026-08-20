@@ -370,6 +370,7 @@ export function EditToilet() {
           onChange={(e) => setForm((prev) => ({ ...prev!, hint_note: e.target.value.trim() || null }))}
           placeholder="Directions, what to look for…"
           rows={3}
+          maxLength={CONFIG.wizard.hintNoteMaxLength}
           style={{
             border: "1.5px solid var(--border-strong)",
             borderRadius: 4,

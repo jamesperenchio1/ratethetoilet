@@ -37,11 +37,26 @@ npm run dev
 The self-hosted Supabase stack lives at `/opt/ratethetoilet-supabase/docker` on the
 home server (a sparse checkout of `supabase/supabase`'s `docker/` folder, kept
 out of this repo). The schema/RLS this app depends on is versioned here at
-`supabase/migrations/0001_init.sql` — apply it with:
+`supabase/migrations/*.sql`.
 
-```bash
-docker exec -i supabase-db psql -U postgres -d postgres < supabase/migrations/0001_init.sql
-```
+**Applying migrations**: run `supabase/apply-migrations.sh` from a checkout on
+the home server. It tracks what's already applied in a `_migrations` table on
+the DB itself, so it's safe to re-run any time (new migrations get picked up,
+already-applied ones are skipped) — no more guessing which `.sql` files have
+actually landed. A migration that needs elevated privileges (noted in its own
+header comment, e.g. `0005_edit_listings.sql`) needs
+`SUPABASE_DB_USER=supabase_admin supabase/apply-migrations.sh`.
+
+**Backups**: `supabase/backup.sh` dumps the whole DB to a gzipped, timestamped
+file (default `./backups`, pruned after `BACKUP_KEEP_DAYS`, default 14) — see
+the script header for a suggested daily cron entry. This covers the Postgres
+data (toilets, reviews, profiles, everything); photo bytes live in Storage
+separately and aren't included.
+
+Both scripts assume the DB container is named `supabase-db` (override with
+`SUPABASE_DB_CONTAINER` if yours differs) and that `docker exec` on the host
+can reach it without a password prompt (a `~/.pgpass` entry or the container
+trusting local connections).
 
 ## Admin / moderation
 

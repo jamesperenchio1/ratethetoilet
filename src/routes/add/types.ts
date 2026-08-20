@@ -9,6 +9,9 @@ export interface PendingPhoto {
   storagePath: string | null;
   status: "uploading" | "done" | "error";
   errorMessage?: string;
+  /** Non-blocking heads-up (e.g. "couldn't compress this photo") — the
+   * upload still proceeds, this is just a UX signal, not a failure. */
+  warning?: string;
 }
 
 /** One toilet's per-floor data. The primary submission is an entry too — a

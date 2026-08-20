@@ -49,9 +49,13 @@ export function StepReview({
         className="note"
         style={{ minHeight: 96, border: "1.5px solid var(--border-note)", resize: "none" }}
         value={entry.review}
+        maxLength={CONFIG.wizard.reviewMaxLength}
         onChange={(e) => onChangeEntry((prev) => ({ ...prev, review: e.target.value }))}
         placeholder="Clean and stocked, but the lock was broken…"
       />
+      <div style={{ fontSize: 11, color: "var(--text-muted)", textAlign: "right" }}>
+        {entry.review.length}/{CONFIG.wizard.reviewMaxLength}
+      </div>
 
       <div
         style={{ fontSize: 12, color: "var(--chart-4)", cursor: "pointer" }}
@@ -79,6 +83,7 @@ export function StepReview({
             className="note"
             style={{ minHeight: 82, border: "1.5px solid var(--border-note)", resize: "none" }}
             value={entry.hintNote}
+            maxLength={CONFIG.wizard.hintNoteMaxLength}
             onChange={(e) => onChangeEntry((prev) => ({ ...prev, hintNote: e.target.value }))}
             placeholder="Behind the Amazon café. Ask the cashier for the key, ฿5 coin."
           />

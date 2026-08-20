@@ -159,11 +159,21 @@ export function StepPhotos({
   }
 
   async function uploadOne(localId: string, file: File) {
-    updatePhoto(localId, { file, status: "uploading", errorMessage: undefined });
+    updatePhoto(localId, { file, status: "uploading", errorMessage: undefined, warning: undefined });
     // Full-resolution phone photos (3-8MB HEIC/JPEG) are large enough that a
     // slow or cellular connection can time out mid-transfer — downscale before
     // sending. photo.file (used for preview/re-edit) keeps the original.
-    const upload = await compressImage(file);
+    let upload: File;
+    try {
+      const result = await compressImage(file);
+      upload = result.file;
+      if (result.fellBackToOriginal && file.size > 3_000_000) {
+        updatePhoto(localId, { warning: "Couldn't shrink this photo — uploading full size, may be slow." });
+      }
+    } catch (err) {
+      updatePhoto(localId, { status: "error", errorMessage: friendlyUploadError(err) });
+      return;
+    }
     try {
       const path = await uploadDraftPhoto(draftId, localId, upload);
       updatePhoto(localId, { storagePath: path, status: "done" });
@@ -321,6 +331,11 @@ export function StepPhotos({
               {p.status === "error" && p.errorMessage && (
                 <span style={{ fontSize: 9, color: "var(--red-3)", wordBreak: "break-word" }}>
                   {p.errorMessage}
+                </span>
+              )}
+              {p.status !== "error" && p.warning && (
+                <span style={{ fontSize: 9, color: "var(--text-muted)", wordBreak: "break-word" }}>
+                  {p.warning}
                 </span>
               )}
               </div>

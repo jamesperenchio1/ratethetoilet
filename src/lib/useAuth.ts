@@ -104,9 +104,15 @@ export function useAuth() {
     const { data, error } = await supabase.rpc("ensure_profile");
     if (error) {
       // If the anonymous session's auth.users row no longer exists (e.g. the
-      // database was reset), ensure_profile fails on the profiles FK. Drop the
-      // ghost session, mint a fresh anonymous user, and retry once.
-      if (s.user.is_anonymous && (error.code === "23503" || (error as { message?: string })?.message?.includes("profiles_id_fkey"))) {
+      // database was reset), ensure_profile's insert into profiles fails on
+      // its FK to auth.users. `23503` is the SQL-standard SQLSTATE for
+      // foreign_key_violation (stable across Postgres versions and immune to
+      // the constraint ever being renamed) — checking only the code, not a
+      // message/constraint-name string, is what keeps this from silently
+      // stopping to work. Drop the ghost session, mint a fresh anonymous
+      // user, and retry once.
+      if (s.user.is_anonymous && error.code === "23503") {
+        console.warn("Stale anonymous session detected, minting a new one", error);
         await supabase.auth.signOut();
         setSession(null);
         setProfile(null);
