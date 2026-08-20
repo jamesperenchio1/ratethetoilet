@@ -21,6 +21,7 @@ export function StepVenue({
 }) {
   const [catalog, setCatalog] = useState<VenueTypeDef[]>([]);
   const [customFloor, setCustomFloor] = useState("");
+  const [customPrimaryFloor, setCustomPrimaryFloor] = useState("");
   const [venueMatches, setVenueMatches] = useState<Venue[]>([]);
   const [searchingVenue, setSearchingVenue] = useState(false);
   const venueAbort = useRef<AbortController | null>(null);
@@ -273,6 +274,37 @@ export function StepVenue({
                 {f}
               </span>
             ))}
+            {draft.primary.floorLabel && !FLOOR_PRESETS.includes(draft.primary.floorLabel) && (
+              <span className="chip on" onClick={() => setPrimaryFloor(null)}>
+                {draft.primary.floorLabel}
+              </span>
+            )}
+          </div>
+          <div style={{ display: "flex", gap: 6 }}>
+            <input
+              className="box"
+              style={{ flex: 1 }}
+              value={customPrimaryFloor}
+              onChange={(e) => setCustomPrimaryFloor(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  setPrimaryFloor(customPrimaryFloor.trim());
+                  setCustomPrimaryFloor("");
+                }
+              }}
+              placeholder="Custom floor, e.g. Mezzanine"
+            />
+            <button
+              className="btn2"
+              style={{ width: "auto", padding: "8px 12px" }}
+              disabled={!customPrimaryFloor.trim()}
+              onClick={() => {
+                setPrimaryFloor(customPrimaryFloor.trim());
+                setCustomPrimaryFloor("");
+              }}
+            >
+              Set
+            </button>
           </div>
 
           <div className="lbl">Also add floors</div>

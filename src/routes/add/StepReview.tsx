@@ -61,7 +61,7 @@ export function StepReview({
         style={{ fontSize: 12, color: "var(--chart-4)", cursor: "pointer" }}
         onClick={() => setHintOpen((o) => !o)}
       >
-        {hintOpen ? "▾ Hide" : "▸ Add directions"} — how to find it (optional)
+        {hintOpen ? "▾ Hide" : "▸ Add directions"} — how to find (optional)
       </div>
 
       {hintOpen && (

@@ -38,6 +38,9 @@ export interface Toilet {
   location_source?: "gps" | "search" | "manual" | null;
   floor?: string | null;
   venue_id?: string | null;
+  /** Storage path of the first (position 0) non-hidden photo, when one exists.
+   * Populated by the list queries so cards can show a thumbnail. */
+  photo_storage_path?: string | null;
 }
 
 export interface Venue {

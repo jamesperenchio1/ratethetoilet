@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { TopBar } from "../components/layout/TopBar";
 import { ReportSheet } from "../components/ReportSheet";
-import { getToilet, addReview, photoUrl, deleteOwnToilet } from "../lib/api";
+import { getToilet, addReview, photoUrl, deleteOwnToilet, reorderToiletPhotos } from "../lib/api";
 import { enqueuePost } from "../lib/offlineQueue";
 import { accessTypesLabel, venueTypesLabel } from "../lib/labels";
 import { scoreColor } from "../lib/score";
@@ -27,6 +27,10 @@ export function ToiletDetail() {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [loadError, setLoadError] = useState(false);
+  const [justPosted, setJustPosted] = useState(false);
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [savingOrder, setSavingOrder] = useState(false);
+  const [reorderError, setReorderError] = useState(false);
 
   async function load(attempt = 0) {
     if (!id) return;
@@ -81,6 +85,8 @@ export function ToiletDetail() {
       });
       setReviewText("");
       load();
+      setJustPosted(true);
+      setTimeout(() => setJustPosted(false), 2500);
     } finally {
       setPosting(false);
     }
@@ -94,6 +100,39 @@ export function ToiletDetail() {
       navigate("/you");
     } finally {
       setDeleting(false);
+    }
+  }
+
+  const isAuthor = profile?.id === toilet.author_id;
+
+  function movePhoto(from: number, to: number) {
+    const ids = photos.map((p) => p.id);
+    const [moved] = ids.splice(from, 1);
+    ids.splice(to, 0, moved);
+    return ids;
+  }
+
+  function handleDrop(to: number) {
+    if (dragIndex === null || dragIndex === to || savingOrder) return;
+    const from = dragIndex;
+    setDragIndex(null);
+    const ids = movePhoto(from, to);
+    setPhotoIndex(from === photoIndex ? to : from > photoIndex && to <= photoIndex ? photoIndex + 1 : from < photoIndex && to >= photoIndex ? photoIndex - 1 : photoIndex);
+    setToilet((prev) => (prev ? { ...prev, photos: ids.map((pid) => photos.find((p) => p.id === pid)!) } : prev));
+    setSavingOrder(true);
+    setReorderError(false);
+    if (toilet) {
+      const save = async () => {
+        try {
+          await reorderToiletPhotos(toilet.id, ids);
+        } catch {
+          setReorderError(true);
+          load();
+        } finally {
+          setSavingOrder(false);
+        }
+      };
+      save();
     }
   }
 
@@ -117,27 +156,95 @@ export function ToiletDetail() {
       <TopBar back title={title} />
       <div className="screen-body">
         {photos.length > 0 ? (
-          <div style={{ position: "relative" }}>
-            <img
-              src={photoUrl(photos[photoIndex].storage_path)}
-              alt=""
-              style={{
-                width: "100%",
-                height: 180,
-                objectFit: "cover",
-                borderRadius: 6,
-                border: "1.5px solid var(--border-strong)",
-              }}
-              onClick={() => setViewer(true)}
-            />
-            <span
-              style={{ position: "absolute", right: 8, top: 8, fontSize: 11, color: "#fff", cursor: "pointer" }}
-              onClick={() =>
-                setReport({ type: "photo", id: photos[photoIndex].id, label: toilet.venue_name || "" })
-              }
-            >
-              photo {photoIndex + 1}/{photos.length} · flag
-            </span>
+          <div>
+            <div style={{ position: "relative" }}>
+              <img
+                src={photoUrl(photos[photoIndex].storage_path)}
+                alt=""
+                style={{
+                  width: "100%",
+                  height: 180,
+                  objectFit: "cover",
+                  borderRadius: 6,
+                  border: "1.5px solid var(--border-strong)",
+                }}
+                onClick={() => setViewer(true)}
+              />
+              <span
+                style={{
+                  position: "absolute",
+                  right: 8,
+                  top: 8,
+                  fontSize: 11,
+                  color: "#fff",
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  minHeight: 32,
+                  padding: "0 6px",
+                }}
+                aria-label="Report this photo"
+                onClick={() =>
+                  setReport({ type: "photo", id: photos[photoIndex].id, label: toilet.venue_name || "" })
+                }
+              >
+                photo {photoIndex + 1}/{photos.length} · ⚑
+              </span>
+            </div>
+            {photos.length > 1 && (
+              <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap", alignItems: "center" }}>
+                {photos.map((p, i) => (
+                  <div
+                    key={p.id}
+                    data-photo-idx={i}
+                    style={{
+                      width: 48,
+                      height: 48,
+                      borderRadius: 6,
+                      overflow: "hidden",
+                      cursor: isAuthor ? "grab" : "pointer",
+                      border: `2px solid ${
+                        i === photoIndex ? "var(--chart-4)" : "var(--border-strong)"
+                      }`,
+                      opacity: dragIndex === i ? 0.5 : 1,
+                      touchAction: "none",
+                    }}
+                    onPointerDown={isAuthor ? (e) => {
+                      if (savingOrder) return;
+                      e.preventDefault();
+                      setDragIndex(i);
+                      const move = (ev: PointerEvent) => {
+                        const target = (ev.target as HTMLElement).closest("[data-photo-idx]");
+                        if (target) handleDrop(Number((target as HTMLElement).dataset.photoIdx));
+                      };
+                      const up = () => {
+                        window.removeEventListener("pointermove", move);
+                        window.removeEventListener("pointerup", up);
+                      };
+                      window.addEventListener("pointermove", move);
+                      window.addEventListener("pointerup", up);
+                    } : undefined}
+                    onClick={isAuthor ? undefined : () => setPhotoIndex(i)}
+                  >
+                    <img
+                      src={photoUrl(p.storage_path)}
+                      alt=""
+                      style={{ width: "100%", height: "100%", objectFit: "cover", pointerEvents: "none" }}
+                    />
+                  </div>
+                ))}
+              </div>
+            )}
+            {isAuthor && photos.length > 1 && (
+              <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>
+                Drag to reorder — the first photo shows first.
+              </div>
+            )}
+            {reorderError && (
+              <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>
+                Couldn't save the new order — try again.
+              </div>
+            )}
           </div>
         ) : (
           <div
@@ -155,10 +262,29 @@ export function ToiletDetail() {
             {toilet.overall_score ?? "—"}
           </span>
         </div>
-        <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
-          {venueTypesLabel(toilet.venue_types)} · {accessTypesLabel(toilet.access_types)}
-          {toilet.wheelchair === "yes" && " · Wheelchair"}
-          {toilet.supplies.length > 0 && ` · ${toilet.supplies.join(", ")}`}
+        <div className="box" style={{ gap: 6 }}>
+          <div style={{ display: "flex", gap: 8, alignItems: "baseline" }}>
+            <span className="lbl" style={{ flexShrink: 0, width: 76 }}>Venue</span>
+            <span style={{ fontSize: 13 }}>{venueTypesLabel(toilet.venue_types)}</span>
+          </div>
+          <div style={{ display: "flex", gap: 8, alignItems: "baseline" }}>
+            <span className="lbl" style={{ flexShrink: 0, width: 76 }}>Access</span>
+            <span style={{ fontSize: 13 }}>{accessTypesLabel(toilet.access_types)}</span>
+          </div>
+          {toilet.wheelchair !== null && (
+            <div style={{ display: "flex", gap: 8, alignItems: "baseline" }}>
+              <span className="lbl" style={{ flexShrink: 0, width: 76 }}>Wheelchair</span>
+              <span style={{ fontSize: 13 }}>
+                {toilet.wheelchair === "yes" ? "Yes" : toilet.wheelchair === "no" ? "No" : "Unsure"}
+              </span>
+            </div>
+          )}
+          {toilet.supplies.length > 0 && (
+            <div style={{ display: "flex", gap: 8, alignItems: "baseline" }}>
+              <span className="lbl" style={{ flexShrink: 0, width: 76 }}>Supplies</span>
+              <span style={{ fontSize: 13 }}>{toilet.supplies.join(", ")}</span>
+            </div>
+          )}
         </div>
 
         {profile?.id === toilet.author_id && (
@@ -192,16 +318,18 @@ export function ToiletDetail() {
 
         {toilet.hint_note && (
           <div className="note">
-            <b>HOW TO FIND IT</b>
+            <b>HOW TO FIND</b>
             <br />
             {toilet.hint_note}
             <span style={{ display: "block", fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>
               {toilet.author?.handle ?? "unknown"} ·{" "}
               <span
-                style={{ cursor: "pointer" }}
+                role="button"
+                aria-label="Report how-to-find note"
+                style={{ cursor: "pointer", minHeight: 32, display: "inline-flex", alignItems: "center", padding: "0 4px" }}
                 onClick={() => setReport({ type: "hint", id: toilet.id, label: "how-to-find-it note" })}
               >
-                flag
+                ⚑ report
               </span>
             </span>
           </div>
@@ -230,6 +358,7 @@ export function ToiletDetail() {
             {posting ? "Posting…" : `Post review${profile ? ` as ${profile.handle}` : ""}`}
           </button>
         </div>
+        {justPosted && <div className="toast">Review posted.</div>}
         {reviews.length === 0 && (
           <div style={{ fontSize: 12, color: "var(--text-muted)" }}>No reviews yet — be the first.</div>
         )}
@@ -239,10 +368,12 @@ export function ToiletDetail() {
             <span style={{ color: "var(--text-muted)" }}>
               {r.author?.handle ?? "unknown"} ·{" "}
               <span
-                style={{ cursor: "pointer" }}
+                role="button"
+                aria-label="Report this review"
+                style={{ cursor: "pointer", minHeight: 32, display: "inline-flex", alignItems: "center", padding: "0 4px" }}
                 onClick={() => setReport({ type: "review", id: r.id, label: r.body })}
               >
-                flag
+                ⚑ report
               </span>
             </span>
           </div>

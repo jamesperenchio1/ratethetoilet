@@ -76,6 +76,7 @@ export function AddToiletWizard() {
   const [retryAt, setRetryAt] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [savedVisible, setSavedVisible] = useState(false);
 
   useEffect(() => {
     // Silent — establishes a device session so draft photos can upload,
@@ -89,6 +90,15 @@ export function AddToiletWizard() {
     // only the in-progress steps are worth persisting, not the terminal screens.
     if (step === "posted" || step === "rate-limited") return;
     saveWizardState(step, draft, floorIdx);
+  }, [step, draft, floorIdx]);
+
+  useEffect(() => {
+    // Subtle "Draft saved" reassurance — show briefly after each autosave and
+    // clear itself. Debounced so it doesn't flash mid-drag.
+    if (step === "posted" || step === "rate-limited") return;
+    setSavedVisible(true);
+    const t = setTimeout(() => setSavedVisible(false), 1200);
+    return () => clearTimeout(t);
   }, [step, draft, floorIdx]);
 
   function reset() {
@@ -298,6 +308,22 @@ export function AddToiletWizard() {
         title="Add a toilet"
         meta={meta}
       />
+      {savedVisible && (
+        <div
+          style={{
+            position: "absolute",
+            top: 8,
+            right: 12,
+            fontSize: 10,
+            color: "var(--text-muted)",
+            background: "var(--surface-note)",
+            borderRadius: 4,
+            padding: "2px 6px",
+          }}
+        >
+          Draft saved
+        </div>
+      )}
       {step === "photos" && (
         <StepPhotos
           entry={draft.primary}

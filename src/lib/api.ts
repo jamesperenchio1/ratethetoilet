@@ -127,23 +127,44 @@ export async function listToiletsNear(
 export async function listAllToilets(): Promise<Toilet[]> {
   const { data, error } = await supabase
     .from("toilets")
-    .select("*")
+    .select(
+      `*, photos:toilet_photos(storage_path, position, hidden)`,
+      { count: "exact" }
+    )
     .eq("hidden", false)
     .order("created_at", { ascending: false })
+    .order("position", { ascending: true, foreignTable: "toilet_photos" })
     .limit(CONFIG.api.allToiletsLimit);
   if (error) throw error;
-  return (data as Toilet[]) ?? [];
+  return mapToThumbnail(data as ToiletWithPhotos[]) ?? [];
 }
 
 export async function searchToilets(query: string): Promise<Toilet[]> {
   const { data, error } = await supabase
     .from("toilets")
-    .select("*")
+    .select(
+      `*, photos:toilet_photos(storage_path, position, hidden)`,
+      { count: "exact" }
+    )
     .eq("hidden", false)
     .ilike("venue_name", `%${query}%`)
+    .order("position", { ascending: true, foreignTable: "toilet_photos" })
     .limit(CONFIG.api.searchLimit);
   if (error) throw error;
-  return (data as Toilet[]) ?? [];
+  return mapToThumbnail(data as ToiletWithPhotos[]) ?? [];
+}
+
+interface ToiletWithPhotos extends Toilet {
+  photos?: { storage_path: string; position: number; hidden: boolean }[];
+}
+
+/** Collapse each toilet's nested photo list into a single thumbnail path
+ * (the first non-hidden photo by position), which the cards render. */
+function mapToThumbnail(rows: ToiletWithPhotos[]): Toilet[] {
+  return rows.map(({ photos, ...t }) => ({
+    ...t,
+    photo_storage_path: photos?.find((p) => !p.hidden)?.storage_path ?? null,
+  }));
 }
 
 export async function getToilet(id: string): Promise<ToiletWithAuthor | null> {
@@ -155,6 +176,7 @@ export async function getToilet(id: string): Promise<ToiletWithAuthor | null> {
        reviews(*, author:profiles!reviews_author_id_fkey(id, handle))`
     )
     .eq("id", id)
+    .order("position", { ascending: true, foreignTable: "toilet_photos" })
     .maybeSingle();
   if (error) throw error;
   return data as unknown as ToiletWithAuthor | null;
@@ -271,6 +293,20 @@ export async function deleteToiletPhoto(photo: ToiletPhoto): Promise<void> {
     .delete()
     .eq("id", photo.id)
     .eq("author_id", photo.author_id);
+  if (error) throw error;
+}
+
+/** Persists a new display order for a toilet's photos (author only). The
+ * first id in the list becomes position 0 — the listing's hero image. */
+export async function reorderToiletPhotos(
+  toiletId: string,
+  photoIds: string[]
+): Promise<void> {
+  if (photoIds.length === 0) return;
+  const { error } = await supabase.rpc("reorder_toilet_photos", {
+    p_toilet_id: toiletId,
+    p_photo_ids: photoIds,
+  });
   if (error) throw error;
 }
 

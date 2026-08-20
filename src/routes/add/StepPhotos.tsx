@@ -107,6 +107,48 @@ export function StepPhotos({
   const uploadRef = useRef<HTMLInputElement>(null);
   const [editing, setEditing] = useState<{ localId: string; file: File } | null>(null);
   const [loadingEdit, setLoadingEdit] = useState<string | null>(null);
+  const [dragLocalId, setDragLocalId] = useState<string | null>(null);
+  const [overIndex, setOverIndex] = useState<number | null>(null);
+  const dragStart = useRef<{ x: number; y: number; id: string } | null>(null);
+  const dragged = useRef(false);
+
+  function onThumbPointerDown(localId: string) {
+    return (e: React.PointerEvent) => {
+      dragStart.current = { x: e.clientX, y: e.clientY, id: localId };
+      dragged.current = false;
+      setDragLocalId(null);
+      setOverIndex(null);
+    };
+  }
+
+  function onThumbPointerMove(e: React.PointerEvent) {
+    const start = dragStart.current;
+    if (!start) return;
+    if (!dragged.current && Math.hypot(e.clientX - start.x, e.clientY - start.y) < 6) return;
+    dragged.current = true;
+    setDragLocalId(start.id);
+    const el = document.elementFromPoint(e.clientX, e.clientY);
+    const target = el?.closest("[data-photo-id]") as HTMLElement | null;
+    const idx = target ? Number(target.dataset.photoId) : NaN;
+    if (!Number.isNaN(idx)) setOverIndex(idx);
+  }
+
+  function onThumbPointerUp() {
+    const start = dragStart.current;
+    dragStart.current = null;
+    if (dragged.current && start && overIndex != null) {
+      onChangeEntry((prev) => {
+        const from = prev.photos.findIndex((p) => p.localId === start.id);
+        if (from === -1 || overIndex === from) return prev;
+        const photos = [...prev.photos];
+        const [moved] = photos.splice(from, 1);
+        photos.splice(overIndex, 0, moved);
+        return { ...prev, photos };
+      });
+    }
+    setDragLocalId(null);
+    setOverIndex(null);
+  }
 
   function updatePhoto(localId: string, patch: Partial<PendingPhoto>) {
     onChangeEntry((prev) => ({
@@ -269,11 +311,40 @@ export function StepPhotos({
       {entry.photos.length > 0 && (
         <>
           <div className="lbl">Added · {entry.photos.length} of {CONFIG.wizard.maxPhotos}</div>
+          {entry.photos.length > 1 && (
+            <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
+              Drag photos to reorder — the first one shows first.
+            </div>
+          )}
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-            {entry.photos.map((p) => (
-              <div key={p.localId} style={{ display: "flex", flexDirection: "column", gap: 2, maxWidth: 64 }}>
+            {entry.photos.map((p, i) => (
+              <div
+                key={p.localId}
+                data-photo-id={i}
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 2,
+                  maxWidth: 64,
+                  touchAction: "none",
+                  cursor: "grab",
+                  opacity: dragLocalId === p.localId ? 0.5 : 1,
+                }}
+                onPointerDown={onThumbPointerDown(p.localId)}
+                onPointerMove={onThumbPointerMove}
+                onPointerUp={onThumbPointerUp}
+              >
               <div style={{ position: "relative" }}>
-                <Thumb photo={p} onClick={() => openEditor(p)} />
+                <Thumb
+                  photo={p}
+                  onClick={() => {
+                    if (dragged.current) {
+                      dragged.current = false;
+                      return;
+                    }
+                    openEditor(p);
+                  }}
+                />
                 {loadingEdit === p.localId && (
                   <span style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10 }}>
                     …

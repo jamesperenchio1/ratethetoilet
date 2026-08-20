@@ -26,8 +26,11 @@ function Slider({
           onChange={(e) => onChange(Number(e.target.value))}
           style={{ flex: 1 }}
         />
-        <span style={{ fontSize: 10, color: "var(--text-muted)", width: 44, textAlign: "right" }}>
-          {"great"}
+        <span
+          className="num"
+          style={{ fontSize: 18, color: scoreColor(value), width: 44, textAlign: "right" }}
+        >
+          {value}
         </span>
       </div>
       <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
@@ -65,6 +68,9 @@ export function StepScores({
           {overall ?? "—"}
         </span>
         <span style={{ fontSize: 12 }}>{scoreLabel(overall)}</span>
+      </div>
+      <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
+        This becomes the overall score.
       </div>
 
       <div className="ann">Sliders start at {CONFIG.wizard.defaultScore} — drag toward great or toward avoid.</div>
