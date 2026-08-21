@@ -5,6 +5,8 @@ import { CONFIG } from "../../lib/config";
 import type { FloorEntry, PendingPhoto } from "./types";
 import { PhotoEditor } from "./PhotoEditor";
 import { StepDots } from "./StepDots";
+import { ProgressFill, UploadProgressOverlay } from "../../components/UploadProgress";
+import { throttledProgress } from "../../lib/throttledProgress";
 
 function Thumb({ photo, onClick }: { photo: PendingPhoto; onClick: () => void }) {
   const [objectUrl, setObjectUrl] = useState<string | null>(null);
@@ -46,26 +48,7 @@ function Thumb({ photo, onClick }: { photo: PendingPhoto; onClick: () => void })
       {src && (
         <img src={src} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
       )}
-      {photo.status === "uploading" && (
-        <span
-          style={{
-            position: "absolute",
-            right: 2,
-            bottom: 2,
-            width: 14,
-            height: 14,
-            borderRadius: "50%",
-            background: "rgba(255,255,255,.9)",
-            border: "1px solid var(--border-strong)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            fontSize: 9,
-          }}
-        >
-          …
-        </span>
-      )}
+      {photo.status === "uploading" && <UploadProgressOverlay progress={photo.progress ?? 0} />}
       {photo.status === "error" && (
         <span
           style={{
@@ -201,7 +184,7 @@ export function StepPhotos({
   }
 
   async function uploadOne(localId: string, file: File) {
-    updatePhoto(localId, { file, status: "uploading", errorMessage: undefined, warning: undefined });
+    updatePhoto(localId, { file, status: "uploading", errorMessage: undefined, warning: undefined, progress: 0 });
     // Full-resolution phone photos (3-8MB HEIC/JPEG) are large enough that a
     // slow or cellular connection can time out mid-transfer — downscale before
     // sending. photo.file (used for preview/re-edit) keeps the original.
@@ -216,25 +199,22 @@ export function StepPhotos({
       updatePhoto(localId, { status: "error", errorMessage: friendlyUploadError(err) });
       return;
     }
+    // storageUpload() already retries internally (with backoff) on failure —
+    // no separate retry here, so the progress bar doesn't repeatedly snap
+    // back to 0% for what the user perceives as one upload.
+    const onProgress = throttledProgress((fraction) => updatePhoto(localId, { progress: fraction }));
     try {
-      const path = await uploadDraftPhoto(draftId, localId, upload);
+      const path = await uploadDraftPhoto(draftId, localId, upload, onProgress);
       updatePhoto(localId, { storagePath: path, status: "done" });
-    } catch (err1) {
-      // One retry — a single flaky mobile request shouldn't flip a fine photo to "failed".
-      try {
-        await new Promise((r) => setTimeout(r, CONFIG.wizard.photoRetryDelayMs));
-        const path = await uploadDraftPhoto(draftId, localId, upload);
-        updatePhoto(localId, { storagePath: path, status: "done" });
-      } catch (err2) {
-        updatePhoto(localId, { status: "error", errorMessage: friendlyUploadError(err2 ?? err1) });
-      }
+    } catch (err) {
+      updatePhoto(localId, { status: "error", errorMessage: friendlyUploadError(err) });
     }
   }
 
   async function retryPhoto(localId: string) {
     const p = entry.photos.find((ph) => ph.localId === localId);
     if (!p || !p.file) return;
-    updatePhoto(localId, { status: "uploading", errorMessage: undefined });
+    updatePhoto(localId, { status: "uploading", errorMessage: undefined, progress: 0 });
     try {
       await ensureSession();
     } catch (err) {
@@ -265,6 +245,15 @@ export function StepPhotos({
 
   const doneCount = entry.photos.filter((p) => p.status === "done").length;
   const anyUploading = entry.photos.some((p) => p.status === "uploading");
+  // Averaged by count, not bytes — a photo restored from a prior session
+  // (its File object doesn't survive persistence) has no size to weight by,
+  // and compression already normalizes uploads to a similar size anyway.
+  const uploadingPhotos = entry.photos.filter((p) => p.status === "uploading" || p.status === "done");
+  const batchProgress =
+    uploadingPhotos.length > 0
+      ? uploadingPhotos.reduce((sum, p) => sum + (p.status === "done" ? 1 : (p.progress ?? 0)), 0) /
+        uploadingPhotos.length
+      : 0;
 
   return (
     <div className="screen-body">
@@ -307,6 +296,18 @@ export function StepPhotos({
           ▣ Upload from phone
         </button>
       </div>
+
+      {anyUploading && (
+        <div
+          role="progressbar"
+          aria-valuenow={Math.round(batchProgress * 100)}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          style={{ borderRadius: 3, overflow: "hidden" }}
+        >
+          <ProgressFill progress={batchProgress} height={6} track="var(--surface-note)" />
+        </div>
+      )}
 
       {entry.photos.length > 0 && (
         <>
@@ -423,7 +424,7 @@ export function StepPhotos({
         {entry.photos.length > 0 ? `Use these ${doneCount} photos` : "Continue without photos"}
       </button>
       {entry.photos.length > 0 && (
-        <button className="ghost" onClick={onNext}>
+        <button className="ghost" disabled={anyUploading} onClick={onNext}>
           Skip photos for now
         </button>
       )}

@@ -12,6 +12,9 @@ export interface PendingPhoto {
   /** Non-blocking heads-up (e.g. "couldn't compress this photo") — the
    * upload still proceeds, this is just a UX signal, not a failure. */
   warning?: string;
+  /** Fraction (0-1) of the current upload attempt's bytes sent. Only
+   * meaningful while status is "uploading". */
+  progress?: number;
 }
 
 /** One toilet's per-floor data. The primary submission is an entry too — a

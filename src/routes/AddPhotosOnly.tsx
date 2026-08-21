@@ -5,9 +5,19 @@ import { useIdentity } from "../components/IdentityGateProvider";
 import { getToilet, uploadToiletPhoto, photoUrl, friendlyUploadError } from "../lib/api";
 import { compressImage } from "../lib/imageCompress";
 import { CONFIG } from "../lib/config";
+import { throttledProgress } from "../lib/throttledProgress";
+import { UploadProgressOverlay } from "../components/UploadProgress";
 import type { ToiletWithAuthor } from "../lib/types";
 
-function NewPhotoThumb({ file, onRemove }: { file: File; onRemove: () => void }) {
+function NewPhotoThumb({
+  file,
+  onRemove,
+  progress,
+}: {
+  file: File;
+  onRemove: () => void;
+  progress: number | null;
+}) {
   const [objectUrl, setObjectUrl] = useState<string | null>(null);
 
   useEffect(() => {
@@ -25,6 +35,7 @@ function NewPhotoThumb({ file, onRemove }: { file: File; onRemove: () => void })
       {objectUrl && (
         <img src={objectUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
       )}
+      {progress != null && <UploadProgressOverlay progress={progress} />}
       <span
         style={{
           position: "absolute",
@@ -54,6 +65,7 @@ export function AddPhotosOnly() {
   const [toilet, setToilet] = useState<ToiletWithAuthor | null>(null);
   const [newPhotos, setNewPhotos] = useState<File[]>([]);
   const [busy, setBusy] = useState(false);
+  const [progressByFile, setProgressByFile] = useState<Map<File, number>>(new Map());
   const [error, setError] = useState<string | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
   const cameraRef = useRef<HTMLInputElement>(null);
@@ -71,6 +83,12 @@ export function AddPhotosOnly() {
     setBusy(true);
     setError(null);
     setWarning(null);
+    setProgressByFile(new Map());
+    // Shared across workers: as soon as one photo permanently fails, the
+    // others stop picking up new work instead of continuing to upload in
+    // the background after the error is already shown (and the Add button
+    // re-enabled) — without this, a retry could re-upload the same files.
+    let cancelled = false;
     try {
       let anyFellBack = false;
       await withIdentity(async (profile) => {
@@ -78,16 +96,26 @@ export function AddPhotosOnly() {
         const workers = Array.from(
           { length: Math.min(CONFIG.wizard.photoUploadConcurrency, queue.length) },
           async () => {
-            while (queue.length) {
+            while (queue.length && !cancelled) {
               const file = queue.shift()!;
-              const { file: compressed, fellBackToOriginal } = await compressImage(file);
-              if (fellBackToOriginal && file.size > 3_000_000) anyFellBack = true;
-              await uploadToiletPhoto(profile.id, id, compressed);
+              try {
+                const { file: compressed, fellBackToOriginal } = await compressImage(file);
+                if (fellBackToOriginal && file.size > 3_000_000) anyFellBack = true;
+                const onProgress = throttledProgress((fraction) =>
+                  setProgressByFile((prev) => new Map(prev).set(file, fraction))
+                );
+                await uploadToiletPhoto(profile.id, id, compressed, onProgress);
+                setProgressByFile((prev) => new Map(prev).set(file, 1));
+              } catch (err) {
+                cancelled = true;
+                throw err;
+              }
             }
           }
         );
         await Promise.all(workers);
       });
+      setBusy(false);
       if (anyFellBack) {
         setWarning("Some photos couldn't be shrunk and uploaded at full size.");
         await new Promise((r) => setTimeout(r, 1500));
@@ -96,7 +124,6 @@ export function AddPhotosOnly() {
     } catch (err) {
       console.error(err);
       setError(friendlyUploadError(err));
-    } finally {
       setBusy(false);
     }
   }
@@ -155,6 +182,7 @@ export function AddPhotosOnly() {
             <NewPhotoThumb
               key={i}
               file={file}
+              progress={busy ? progressByFile.get(file) ?? 0 : null}
               onRemove={() => setNewPhotos((p) => p.filter((_, j) => j !== i))}
             />
           ))}
@@ -168,7 +196,15 @@ export function AddPhotosOnly() {
           Add {newPhotos.length || ""} photo{newPhotos.length === 1 ? "" : "s"}
         </button>
       </div>
-      {busy && <div className="toast">Uploading…</div>}
+      {busy && (
+        <div className="toast">
+          Uploading… {Math.round(
+            ((newPhotos.reduce((sum, f) => sum + (progressByFile.get(f) ?? 0), 0)) /
+              Math.max(1, newPhotos.length)) *
+              100
+          )}%
+        </div>
+      )}
       {error && !busy && (
         <div className="toast" style={{ background: "var(--red-3)" }}>
           {error}

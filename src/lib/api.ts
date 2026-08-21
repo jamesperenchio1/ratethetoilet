@@ -1,4 +1,4 @@
-import { supabase } from "./supabase";
+import { supabase, SUPABASE_ANON_KEY } from "./supabase";
 import { CONFIG } from "./config";
 import type {
   Report,
@@ -16,8 +16,11 @@ const PHOTO_BUCKET = CONFIG.api.photoBucket;
 const UPLOAD_TIMEOUT_MS = 45_000;
 const UPLOAD_MAX_RETRIES = 3;
 
-/** True for browser-level network failures that usually mean "the body never
- * made it across" — the right response is to retry, not to give up. */
+/** True for browser-level network failures — and for transient server-side
+ * ones (5xx, 429) — that usually mean "the body never made it across, or the
+ * server was momentarily unable to accept it." The right response for these
+ * is to retry, not to give up; a 4xx like 403 is deliberately excluded since
+ * that's a real client/policy problem, not a flaky connection. */
 function isNetworkError(err: unknown): boolean {
   const msg =
     err instanceof Error ? err.message : typeof err === "string" ? err : String(err ?? "");
@@ -32,7 +35,8 @@ function isNetworkError(err: unknown): boolean {
     lower.includes("aborted") ||
     lower.includes("offline") ||
     lower.includes("connection reset") ||
-    lower.includes("networkerror when fetching")
+    lower.includes("networkerror when fetching") ||
+    /upload failed with status (5\d\d|429)\b/.test(lower)
   );
 }
 
@@ -44,14 +48,107 @@ export function friendlyUploadError(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
+/** PUTs a file to a Storage signed-upload-URL via raw XHR (rather than the
+ * SDK's fetch-based `.upload()`) so upload progress is observable — `fetch`
+ * request bodies have no progress events in any browser we support, but
+ * `XMLHttpRequest.upload.onprogress` does. The body is `multipart/form-data`
+ * with `cacheControl` as a field, matching exactly what
+ * `@supabase/storage-js`'s own `uploadToSignedUrl()` sends for a Blob/File —
+ * that's the shape the server's signed-upload endpoint actually parses, not
+ * a raw body with a hand-set content-type header. Returns the live `xhr`
+ * alongside the promise so a caller-side timeout can abort the in-flight
+ * request instead of just abandoning it. */
+function xhrPutSignedUrl(
+  signedUrl: string,
+  file: File | Blob,
+  authHeaders: { apikey: string; authorization: string },
+  onProgress?: (fraction: number) => void
+): { promise: Promise<void>; xhr: XMLHttpRequest } {
+  const xhr = new XMLHttpRequest();
+  const promise = new Promise<void>((resolve, reject) => {
+    const body = new FormData();
+    body.append("cacheControl", "31536000");
+    body.append("", file);
+    xhr.open("PUT", signedUrl);
+    xhr.setRequestHeader("x-upsert", "false");
+    xhr.setRequestHeader("apikey", authHeaders.apikey);
+    xhr.setRequestHeader("authorization", authHeaders.authorization);
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable) onProgress?.(e.loaded / e.total);
+    };
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve();
+      } else {
+        reject(new Error(`upload failed with status ${xhr.status}: ${xhr.responseText.slice(0, 200)}`));
+      }
+    };
+    xhr.onerror = () => reject(new Error("Failed to fetch"));
+    xhr.onabort = () => reject(new Error("upload aborted"));
+    xhr.send(body);
+  });
+  return { promise, xhr };
+}
+
+/** Signs + PUTs one attempt, bounded end-to-end by `timeoutMs` — including
+ * the `createSignedUploadUrl` round trip, which (unlike the XHR PUT) has no
+ * native timeout of its own and could otherwise hang the whole retry loop
+ * on a request that never resolves. */
+async function attemptUpload(
+  path: string,
+  file: File | Blob,
+  timeoutMs: number,
+  onProgress?: (fraction: number) => void
+): Promise<void> {
+  let xhr: XMLHttpRequest | undefined;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      (async () => {
+        const { data: signed, error: signErr } = await supabase.storage
+          .from(PHOTO_BUCKET)
+          .createSignedUploadUrl(path);
+        if (signErr) throw signErr;
+        if (!signed) throw new Error("No signed upload URL returned");
+        // Fetched as late as possible (right before the PUT, not before the
+        // signing round trip) so it's the freshest token available.
+        const { data: session } = await supabase.auth.getSession();
+        const accessToken = session.session?.access_token ?? SUPABASE_ANON_KEY;
+        const result = xhrPutSignedUrl(
+          signed.signedUrl,
+          file,
+          { apikey: SUPABASE_ANON_KEY, authorization: `Bearer ${accessToken}` },
+          onProgress
+        );
+        xhr = result.xhr;
+        await result.promise;
+      })(),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => {
+          xhr?.abort();
+          reject(new Error(`upload timed out after ${Math.round(timeoutMs / 1000)}s`));
+        }, timeoutMs);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /** Uploads one photo to storage with a per-attempt timeout and retries.
  * Each attempt uses a fresh random path — the upload is never an upsert, so a
  * timed-out attempt that actually landed server-side can't collide with the
  * retry. Unique paths mean `toilet_photos.storage_path` always maps 1:1 to a
- * file, and no UPDATE policy is needed on storage.objects. */
+ * file, and no UPDATE policy is needed on storage.objects.
+ *
+ * Goes through `createSignedUploadUrl` + a raw XHR PUT (instead of the SDK's
+ * `.upload()`) purely to get real upload-progress events; the signed URL
+ * still requires the caller's insert permission on `storage.objects` at
+ * request time, same as a plain `.upload()`. */
 async function storageUpload(
   makePath: () => string,
-  file: File | Blob
+  file: File | Blob,
+  onProgress?: (fraction: number) => void
 ): Promise<string> {
   let lastErr: unknown;
   for (let attempt = 0; attempt <= UPLOAD_MAX_RETRIES; attempt++) {
@@ -61,25 +158,12 @@ async function storageUpload(
       );
     }
     const path = makePath();
-    let timer: ReturnType<typeof setTimeout> | undefined;
+    onProgress?.(0);
     try {
-      const result = await Promise.race([
-        supabase.storage.from(PHOTO_BUCKET).upload(path, file, {
-          contentType: file.type || "image/jpeg",
-          cacheControl: "31536000",
-        }),
-        new Promise<never>((_, reject) => {
-          timer = setTimeout(
-            () => reject(new Error(`upload timed out after ${UPLOAD_TIMEOUT_MS / 1000}s`)),
-            UPLOAD_TIMEOUT_MS * (attempt + 1)
-          );
-        }),
-      ]);
-      clearTimeout(timer);
-      if (result.error) throw result.error;
+      await attemptUpload(path, file, UPLOAD_TIMEOUT_MS * (attempt + 1), onProgress);
+      onProgress?.(1);
       return path;
     } catch (err) {
-      clearTimeout(timer);
       lastErr = err;
     }
   }
@@ -249,11 +333,13 @@ export async function findOrCreateVenueType(label: string): Promise<string> {
 export async function uploadToiletPhoto(
   authorId: string,
   toiletId: string,
-  file: File | Blob
+  file: File | Blob,
+  onProgress?: (fraction: number) => void
 ): Promise<ToiletPhoto> {
   const path = await storageUpload(
     () => `${toiletId}/${crypto.randomUUID()}.jpg`,
-    file
+    file,
+    onProgress
   );
 
   const { data, error } = await supabase
@@ -268,11 +354,13 @@ export async function uploadToiletPhoto(
 export async function uploadDraftPhoto(
   draftId: string,
   localId: string,
-  file: File | Blob
+  file: File | Blob,
+  onProgress?: (fraction: number) => void
 ): Promise<string> {
   const path = await storageUpload(
     () => `draft/${draftId}/${localId}-${crypto.randomUUID()}.jpg`,
-    file
+    file,
+    onProgress
   );
   return path;
 }
