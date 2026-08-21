@@ -6,6 +6,15 @@
     <link rel="apple-touch-icon" href="/icon-192.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#0e1419" />
+    <!-- The backend's Cloudflare edge blocks any request whose Referer names
+         a different domain (a hotlink-protection rule, by its `vary: referer`
+         403) — including this app's own cross-origin calls to it, since the
+         browser's default referrer policy sends the app's origin as Referer
+         on every cross-origin request. `same-origin` sends no Referer at all
+         cross-origin, which the same rule allows through; same-origin
+         requests (none currently, but any future ones) still get a referrer.
+         Confirmed live: uploads succeed with this set, fail without it. -->
+    <meta name="referrer" content="same-origin" />
     <link rel="preconnect" href="https://tiles.openfreemap.org" />
     <link rel="preconnect" href="https://nominatim.openstreetmap.org" />
     <meta name="description" content="Find a public toilet you can trust in Bangkok." />
