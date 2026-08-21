@@ -275,6 +275,8 @@ export function EditToilet() {
         <div className="map" style={{ height: 180, borderRadius: 6, overflow: "hidden", border: "1.5px solid var(--border-strong)", display: "flex", flexDirection: "column" }}>
           <MapView
             center={{ lat: form.lat, lng: form.lng }}
+            zoom={17}
+            maxZoom={18}
             draggableMarker={{ lat: form.lat, lng: form.lng }}
             onDraggableMarkerMove={(pos) =>
               setForm((prev) => ({ ...prev!, lat: pos.lat, lng: pos.lng, location_source: "manual" }))
@@ -287,7 +289,7 @@ export function EditToilet() {
           />
         </div>
         <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
-          {form.lat.toFixed(4)}, {form.lng.toFixed(4)} · drag the pin or tap GPS
+          {form.lat.toFixed(6)}, {form.lng.toFixed(6)} · drag the pin or tap GPS
         </div>
 
         <div className="lbl">Venue</div>

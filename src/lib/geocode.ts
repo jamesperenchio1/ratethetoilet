@@ -42,7 +42,7 @@ function fetchWithTimeout(url: string, externalSignal?: AbortSignal): Promise<Re
  * house number, two different houses a few doors apart end up with the exact
  * same suggested name. Prefix with the house number whenever OSM has one.
  */
-function shortName(row: NominatimRow): string {
+function primaryName(row: NominatimRow): string {
   if (row.name) return row.name;
   const a = row.address;
   if (a?.amenity) return a.amenity;
@@ -53,6 +53,28 @@ function shortName(row: NominatimRow): string {
   const area = street || a?.village || a?.neighbourhood || a?.suburb;
   if (a?.house_number && area) return `${a.house_number} ${area}`;
   return area || row.display_name.split(",")[0].trim();
+}
+
+/**
+ * Locality context (district, then city) to trail the primary name with —
+ * a bare "Wat Pho" or "Soi 5" reads as plain and is ambiguous across a city
+ * the size of Bangkok, so pair it with the neighborhood/district and city
+ * whenever OSM has them and they're not already the primary name itself.
+ */
+function localityContext(row: NominatimRow, primary: string): string[] {
+  const a = row.address;
+  if (!a) return [];
+  const district = a.suburb || a.neighbourhood || a.city_district;
+  const city = a.city || a.town || a.village;
+  const parts = [district, city].filter((p): p is string => !!p && p !== primary);
+  return [...new Set(parts)];
+}
+
+/** A verbose, disambiguated place name: primary spot plus district/city context. */
+function fullName(row: NominatimRow): string {
+  const primary = primaryName(row);
+  const context = localityContext(row, primary);
+  return context.length ? `${primary}, ${context.join(", ")}` : primary;
 }
 
 /** Best-effort place name for a dropped/dragged pin — falls back to null on any failure. */
@@ -69,7 +91,7 @@ export async function reverseGeocode(
     if (!row || !row.display_name) return null;
     return {
       id: String(row.place_id),
-      name: shortName(row),
+      name: fullName(row),
       displayName: row.display_name,
       lat: Number(row.lat),
       lng: Number(row.lon),
@@ -104,7 +126,7 @@ export async function searchPlaces(
     const rows = (await res.json()) as NominatimRow[];
     return rows.map((row) => ({
       id: String(row.place_id),
-      name: shortName(row),
+      name: fullName(row),
       displayName: row.display_name,
       lat: Number(row.lat),
       lng: Number(row.lon),

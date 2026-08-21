@@ -157,6 +157,8 @@ export function StepLocation({
         <MapView
           className="map"
           center={draft.lat != null ? { lat: draft.lat, lng: draft.lng! } : undefined}
+          zoom={17}
+          maxZoom={18}
           draggableMarker={draft.lat != null ? { lat: draft.lat, lng: draft.lng! } : undefined}
           onDraggableMarkerMove={(pos) =>
             onChange((prev) => ({ ...prev, lat: pos.lat, lng: pos.lng, locationSource: "manual" }))
@@ -175,7 +177,7 @@ export function StepLocation({
               : draft.venueName || (draft.lat != null ? "Unnamed spot" : "Locating…")}
           </b>
           <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
-            {draft.lat != null && `${draft.lat.toFixed(4)}, ${draft.lng!.toFixed(4)}`}
+            {draft.lat != null && `${draft.lat.toFixed(6)}, ${draft.lng!.toFixed(6)}`}
             {draft.locationSource === "gps" && " · From GPS"}
             {draft.locationSource === "manual" && " · Dragged"}
             {draft.locationSource === "search" && " · From search"}
