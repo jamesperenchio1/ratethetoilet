@@ -19,10 +19,10 @@ const addReview = vi.fn();
 const findOrCreateVenue = vi.fn();
 
 vi.mock("./api", () => ({
-  createToilet: (...args: unknown[]) => createToilet(...args),
-  attachDraftPhotos: (...args: unknown[]) => attachDraftPhotos(...args),
-  addReview: (...args: unknown[]) => addReview(...args),
-  findOrCreateVenue: (...args: unknown[]) => findOrCreateVenue(...args),
+  createToilet,
+  attachDraftPhotos,
+  addReview,
+  findOrCreateVenue,
 }));
 
 const { enqueuePost, listQueued, flushQueue } = await import("./offlineQueue");

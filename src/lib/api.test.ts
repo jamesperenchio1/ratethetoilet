@@ -6,8 +6,8 @@ const storageFrom = vi.fn(() => ({ createSignedUploadUrl }));
 
 vi.mock("./supabase", () => ({
   supabase: {
-    auth: { getSession: (...args: unknown[]) => getSession(...args) },
-    storage: { from: (...args: unknown[]) => storageFrom(...args) },
+    auth: { getSession },
+    storage: { from: storageFrom },
   },
   SUPABASE_ANON_KEY: "test-anon-key",
 }));
