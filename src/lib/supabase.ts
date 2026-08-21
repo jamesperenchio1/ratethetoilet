@@ -9,9 +9,10 @@ if (!url || !anonKey) {
   );
 }
 
-/** The anon key, for callers that need to hand-build a request outside the
- * SDK (e.g. a raw XHR to a Storage signed URL for upload-progress events). */
+/** The anon key and Storage base URL, for callers that need to hand-build a
+ * request outside the SDK (e.g. a raw XHR upload for progress events). */
 export const SUPABASE_ANON_KEY = anonKey;
+export const SUPABASE_STORAGE_URL = `${url.replace(/\/$/, "")}/storage/v1`;
 
 export const supabase = createClient(url, anonKey, {
   auth: {

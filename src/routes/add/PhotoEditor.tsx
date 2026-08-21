@@ -35,6 +35,7 @@ export function PhotoEditor({
 }) {
   const [rotation, setRotation] = useState(0);
   const [rotated, setRotated] = useState<HTMLCanvasElement | null>(null);
+  const [loadError, setLoadError] = useState(false);
   const [inset, setInset] = useState<Inset>({ left: 8, top: 8, right: 8, bottom: 8 });
   const [saving, setSaving] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -43,10 +44,43 @@ export function PhotoEditor({
   useEffect(() => {
     const url = URL.createObjectURL(file);
     const img = new Image();
-    img.onload = () => setRotated(rotateToCanvas(img, rotation));
+    img.onload = () => {
+      setLoadError(false);
+      setRotated(rotateToCanvas(img, rotation));
+    };
+    // Without this, a photo the browser can't decode (e.g. HEIC on a browser
+    // with no native HEIC support) just leaves `rotated` null forever — the
+    // preview area stays blank and Save is silently disabled with no
+    // explanation. Surface it instead so Cancel/Remove are the obvious way out.
+    img.onerror = () => setLoadError(true);
     img.src = url;
     return () => URL.revokeObjectURL(url);
   }, [file, rotation]);
+
+  // Re-encoding the full-resolution canvas to a data URL is expensive (a
+  // multi-megapixel photo can take real time to base64-encode) — doing it
+  // inline in JSX meant it re-ran on every render, including every single
+  // pointermove while dragging a crop handle, causing the whole editor to
+  // stutter/freeze while cropping. Recompute only when the decoded image
+  // itself changes (a new file or a rotation), never for a crop-box drag.
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  useEffect(() => {
+    if (!rotated) {
+      setPreviewUrl(null);
+      return;
+    }
+    let cancelled = false;
+    let objectUrl: string | null = null;
+    rotated.toBlob((blob) => {
+      if (cancelled || !blob) return;
+      objectUrl = URL.createObjectURL(blob);
+      setPreviewUrl(objectUrl);
+    });
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [rotated]);
 
   useEffect(() => {
     function move(e: PointerEvent) {
@@ -126,67 +160,83 @@ export function PhotoEditor({
           ref={wrapRef}
           style={{ position: "relative", display: "inline-block", maxWidth: "100%", alignSelf: "center" }}
         >
-          {rotated && (
+          {previewUrl && (
             <img
-              src={rotated.toDataURL()}
+              src={previewUrl}
               alt=""
               style={{ display: "block", maxWidth: "100%", maxHeight: 320, borderRadius: 4 }}
             />
           )}
-          {/* dimmed mask outside the crop box */}
-          <div
-            style={{
-              position: "absolute",
-              inset: 0,
-              boxShadow: "0 0 0 9999px rgba(0,0,0,.45)",
-              clipPath: `polygon(0 0, 0 100%, ${inset.left}% 100%, ${inset.left}% ${inset.top}%, ${
-                100 - inset.right
-              }% ${inset.top}%, ${100 - inset.right}% ${100 - inset.bottom}%, ${inset.left}% ${
-                100 - inset.bottom
-              }%, ${inset.left}% 100%, 100% 100%, 100% 0)`,
-              pointerEvents: "none",
-            }}
-          />
-          <div
-            style={{
-              position: "absolute",
-              left: `${inset.left}%`,
-              top: `${inset.top}%`,
-              right: `${inset.right}%`,
-              bottom: `${inset.bottom}%`,
-              border: "1.5px dashed #fff",
-              pointerEvents: "none",
-            }}
-          />
-          <div
-            onPointerDown={startDrag("tl")}
-            style={handleStyle({ left: `calc(${inset.left}% - 11px)`, top: `calc(${inset.top}% - 11px)` })}
-          />
-          <div
-            onPointerDown={startDrag("tr")}
-            style={handleStyle({ right: `calc(${inset.right}% - 11px)`, top: `calc(${inset.top}% - 11px)` })}
-          />
-          <div
-            onPointerDown={startDrag("bl")}
-            style={handleStyle({ left: `calc(${inset.left}% - 11px)`, bottom: `calc(${inset.bottom}% - 11px)` })}
-          />
-          <div
-            onPointerDown={startDrag("br")}
-            style={handleStyle({ right: `calc(${inset.right}% - 11px)`, bottom: `calc(${inset.bottom}% - 11px)` })}
-          />
+          {loadError && (
+            <div
+              className="box"
+              style={{ minHeight: 160, minWidth: 240, alignItems: "center", justifyContent: "center", textAlign: "center", padding: 12 }}
+            >
+              Can't preview this photo's format here. You can still remove it or cancel.
+            </div>
+          )}
+          {rotated && (
+            <>
+              {/* dimmed mask outside the crop box */}
+              <div
+                style={{
+                  position: "absolute",
+                  inset: 0,
+                  boxShadow: "0 0 0 9999px rgba(0,0,0,.45)",
+                  clipPath: `polygon(0 0, 0 100%, ${inset.left}% 100%, ${inset.left}% ${inset.top}%, ${
+                    100 - inset.right
+                  }% ${inset.top}%, ${100 - inset.right}% ${100 - inset.bottom}%, ${inset.left}% ${
+                    100 - inset.bottom
+                  }%, ${inset.left}% 100%, 100% 100%, 100% 0)`,
+                  pointerEvents: "none",
+                }}
+              />
+              <div
+                style={{
+                  position: "absolute",
+                  left: `${inset.left}%`,
+                  top: `${inset.top}%`,
+                  right: `${inset.right}%`,
+                  bottom: `${inset.bottom}%`,
+                  border: "1.5px dashed #fff",
+                  pointerEvents: "none",
+                }}
+              />
+              <div
+                onPointerDown={startDrag("tl")}
+                style={handleStyle({ left: `calc(${inset.left}% - 11px)`, top: `calc(${inset.top}% - 11px)` })}
+              />
+              <div
+                onPointerDown={startDrag("tr")}
+                style={handleStyle({ right: `calc(${inset.right}% - 11px)`, top: `calc(${inset.top}% - 11px)` })}
+              />
+              <div
+                onPointerDown={startDrag("bl")}
+                style={handleStyle({ left: `calc(${inset.left}% - 11px)`, bottom: `calc(${inset.bottom}% - 11px)` })}
+              />
+              <div
+                onPointerDown={startDrag("br")}
+                style={handleStyle({ right: `calc(${inset.right}% - 11px)`, bottom: `calc(${inset.bottom}% - 11px)` })}
+              />
+            </>
+          )}
         </div>
 
-        <div style={{ display: "flex", gap: 6 }}>
-          <button className="btn2" style={{ flex: 1 }} onClick={() => setRotation((r) => (r + 270) % 360)}>
-            ↺ Rotate left
-          </button>
-          <button className="btn2" style={{ flex: 1 }} onClick={() => setRotation((r) => (r + 90) % 360)}>
-            ↻ Rotate right
-          </button>
-        </div>
-        <button className="ghost" onClick={() => setInset({ left: 8, top: 8, right: 8, bottom: 8 })}>
-          Reset crop
-        </button>
+        {rotated && (
+          <>
+            <div style={{ display: "flex", gap: 6 }}>
+              <button className="btn2" style={{ flex: 1 }} onClick={() => setRotation((r) => (r + 270) % 360)}>
+                ↺ Rotate left
+              </button>
+              <button className="btn2" style={{ flex: 1 }} onClick={() => setRotation((r) => (r + 90) % 360)}>
+                ↻ Rotate right
+              </button>
+            </div>
+            <button className="ghost" onClick={() => setInset({ left: 8, top: 8, right: 8, bottom: 8 })}>
+              Reset crop
+            </button>
+          </>
+        )}
 
         <button className="btn" disabled={saving || !rotated} onClick={save}>
           {saving ? "Saving…" : "Save changes"}

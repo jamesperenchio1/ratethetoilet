@@ -1,15 +1,13 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 
 const getSession = vi.fn();
-const createSignedUploadUrl = vi.fn();
-const storageFrom = vi.fn(() => ({ createSignedUploadUrl }));
 
 vi.mock("./supabase", () => ({
   supabase: {
     auth: { getSession },
-    storage: { from: storageFrom },
   },
   SUPABASE_ANON_KEY: "test-anon-key",
+  SUPABASE_STORAGE_URL: "https://storage.example/storage/v1",
 }));
 
 // Imported after the mock is registered so `api.ts` picks up the fake supabase client.
@@ -88,12 +86,7 @@ describe("uploadDraftPhoto (storageUpload)", () => {
     FakeXHR.instances = [];
     vi.stubGlobal("XMLHttpRequest", FakeXHR);
     getSession.mockReset();
-    createSignedUploadUrl.mockReset();
     getSession.mockResolvedValue({ data: { session: { access_token: "user-token" } } });
-    createSignedUploadUrl.mockResolvedValue({
-      data: { signedUrl: "https://storage.example/object/upload/sign/foo?token=abc", token: "abc", path: "foo" },
-      error: null,
-    });
   });
 
   afterEach(() => {
@@ -103,17 +96,22 @@ describe("uploadDraftPhoto (storageUpload)", () => {
 
   const file = new File([new Uint8Array(1000)], "photo.jpg", { type: "image/jpeg" });
 
-  it("resolves with the storage path and reports progress up to 1 on success", async () => {
+  it("POSTs to the plain object endpoint (not a signed-URL PUT) and reports progress up to 1 on success", async () => {
     const progressValues: number[] = [];
     const resultPromise = uploadDraftPhoto("draft1", "local1", file, (f) => progressValues.push(f));
 
     await tick();
     const xhr = lastXhr();
-    expect(xhr.method).toBe("PUT");
+    // Regression guard: this must stay a POST to /object/{bucket}/{path} — a
+    // PUT to a createSignedUploadUrl() signed URL was tried and confirmed
+    // (against the real backend) to always fail with a 401 from something in
+    // front of the self-hosted stack that doesn't route that PUT correctly.
+    expect(xhr.method).toBe("POST");
+    expect(xhr.url).toMatch(
+      /^https:\/\/storage\.example\/storage\/v1\/object\/toilet-photos\/draft\/draft1\/local1-.+\.jpg$/
+    );
     expect(xhr.headers.authorization).toBe("Bearer user-token");
     expect(xhr.headers.apikey).toBe("test-anon-key");
-    // Body must be multipart/form-data (matching the SDK's own signed-upload
-    // request shape), not a raw file with hand-set content-type headers.
     expect(xhr.body).toBeInstanceOf(FormData);
     expect(xhr.headers["content-type"]).toBeUndefined();
 
@@ -186,22 +184,5 @@ describe("uploadDraftPhoto (storageUpload)", () => {
     }
 
     await assertion;
-  });
-
-  it("surfaces createSignedUploadUrl errors as retryable failures too", async () => {
-    createSignedUploadUrl
-      .mockResolvedValueOnce({ data: null, error: new Error("insert not permitted") })
-      .mockResolvedValueOnce({
-        data: { signedUrl: "https://storage.example/object/upload/sign/foo?token=abc", token: "abc", path: "foo" },
-        error: null,
-      });
-
-    const resultPromise = uploadDraftPhoto("draft1", "local1", file);
-
-    await tick(1000);
-    lastXhr().succeed();
-
-    await expect(resultPromise).resolves.toContain("draft/draft1/local1-");
-    expect(createSignedUploadUrl).toHaveBeenCalledTimes(2);
   });
 });

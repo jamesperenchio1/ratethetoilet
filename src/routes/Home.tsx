@@ -148,6 +148,7 @@ export function Home() {
     <>
       <div className="home-map" style={{ position: "relative", flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
         <MapView
+          cacheKey="home"
           pins={pins}
           center={center}
           fitToPins={!hadNavCenter.current}

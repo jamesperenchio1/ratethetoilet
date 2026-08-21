@@ -28,6 +28,20 @@ const MAX_ZOOM = CONFIG.map.maxZoom;
 const PIN_SPREAD_THRESHOLD_PX = CONFIG.map.pinSpreadThresholdPx;
 const PIN_SPREAD_STEP_PX = CONFIG.map.pinSpreadStepPx;
 
+/** Live MapLibre instances (+ their marker-by-id maps) keyed by `cacheKey`,
+ * kept alive across unmount instead of torn down with `map.remove()`. React
+ * Router unmounts a route's whole tree on navigation, so without this,
+ * bouncing between the map screen and a detail page rebuilds the WebGL
+ * context, re-parses the style, and re-adds every marker every single time —
+ * the "reloads every time I swap pages" complaint. Reusing the instance and
+ * just re-parenting its (still-live) container div into the new mount makes
+ * a return visit instant. Only opt in a MapView that's genuinely revisited
+ * often (Home) — a one-shot picker map has nothing to gain from this. */
+const mapCache = new Map<
+  string,
+  { map: MaplibreMap; markersMap: Map<string, Marker>; dragMarker: Marker | null }
+>();
+
 // Spread overlapping pins out into a ring so toilets that are close together
 // (e.g. pins within a couple of houses of each other) stay individually
 // tappable instead of stacking on the same screen pixel. Pins within
@@ -120,6 +134,7 @@ export function MapView({
   className,
   fitToPins = false,
   maxZoom = MAX_ZOOM,
+  cacheKey,
 }: {
   pins?: MapPin[];
   center?: { lat: number; lng: number };
@@ -133,6 +148,11 @@ export function MapView({
   fitToPins?: boolean;
   /** Cap for programmatic zoom (easeTo/fitBounds); manual pinch can go higher. */
   maxZoom?: number;
+  /** Keeps the underlying MapLibre instance alive across unmount/remount
+   * (e.g. navigating away and back) instead of recreating it — reuse is
+   * keyed by this string, so give every persistently-revisited map its own
+   * stable key. Omit for a map that's only ever shown once per flow. */
+  cacheKey?: string;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MaplibreMap | null>(null);
@@ -154,25 +174,12 @@ export function MapView({
 
   useEffect(() => {
     if (!containerRef.current) return;
-    const c = center ?? BANGKOK;
-    let map: MaplibreMap;
-    try {
-      map = new MaplibreMap({
-        container: containerRef.current,
-        style: OPENFREEMAP_STYLE,
-        center: [c.lng, c.lat],
-        zoom,
-        attributionControl: false,
-      });
-    } catch {
-      // e.g. a device/browser without WebGL2 — don't take the whole screen down.
-      setLoading(false);
-      setFailed(true);
-      return;
-    }
     // rAF-throttled: "move" fires on every pan/zoom frame, and re-clustering
     // on each one is wasted work once a frame is already queued.
     let rafId: number | null = null;
+    let map: MaplibreMap;
+
+    const cached = cacheKey ? mapCache.get(cacheKey) : undefined;
     const spread = () => {
       if (rafId != null) return;
       rafId = requestAnimationFrame(() => {
@@ -180,20 +187,70 @@ export function MapView({
         applyPinSpread(map, markersRef.current, pinsRef.current);
       });
     };
-    map.on("move", spread);
-    map.once("load", () => {
+
+    if (cached) {
+      map = cached.map;
+      markersMapRef.current = cached.markersMap;
+      dragMarkerRef.current = cached.dragMarker;
+      // MapLibre uses the element passed as `container` *directly* as its own
+      // container (not an inner child) — so on a genuine remount (a new
+      // `containerRef.current` div) this reparents the map's existing
+      // container into it, but React's dev-only StrictMode mount→unmount→
+      // remount cycle reuses the very same DOM node both times, where
+      // `map.getContainer()` already *is* `containerRef.current` — appending
+      // a node to itself throws HierarchyRequestError. Skip the no-op case.
+      if (map.getContainer() !== containerRef.current) {
+        containerRef.current.appendChild(map.getContainer());
+        // The container was just re-parented (possibly at a different size
+        // than last time) — MapLibre caches canvas dimensions and won't
+        // notice on its own. requestAnimationFrame so layout has settled first.
+        requestAnimationFrame(() => map.resize());
+      }
+      map.on("move", spread);
+      mapRef.current = map;
       setLoading(false);
       applyPinSpread(map, markersRef.current, pinsRef.current);
-    });
-    mapRef.current = map;
+    } else {
+      const c = center ?? BANGKOK;
+      try {
+        map = new MaplibreMap({
+          container: containerRef.current,
+          style: OPENFREEMAP_STYLE,
+          center: [c.lng, c.lat],
+          zoom,
+          attributionControl: false,
+        });
+      } catch {
+        // e.g. a device/browser without WebGL2 — don't take the whole screen down.
+        setLoading(false);
+        setFailed(true);
+        return;
+      }
+      map.on("move", spread);
+      map.once("load", () => {
+        setLoading(false);
+        applyPinSpread(map, markersRef.current, pinsRef.current);
+      });
+      mapRef.current = map;
+      if (cacheKey) {
+        mapCache.set(cacheKey, { map, markersMap: markersMapRef.current, dragMarker: null });
+      }
+    }
+
     return () => {
       if (rafId != null) cancelAnimationFrame(rafId);
-      map.remove();
+      map.off("move", spread);
       mapRef.current = null;
-      markersMapRef.current.clear();
+      if (!cacheKey) {
+        map.remove();
+        markersMapRef.current.clear();
+      }
+      // A cached map is deliberately left running (container just gets
+      // detached along with the rest of this component's DOM) so the next
+      // mount under the same key can reattach it instantly.
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [cacheKey]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -293,7 +350,10 @@ export function MapView({
       dragMarkerRef.current.remove();
       dragMarkerRef.current = null;
     }
-    if (!draggableMarker) return;
+    if (!draggableMarker) {
+      if (cacheKey) mapCache.get(cacheKey)!.dragMarker = null;
+      return;
+    }
     const marker = new Marker({
       draggable: true,
       color: "#0B5FA5",
@@ -305,7 +365,8 @@ export function MapView({
       onDragMoveRef.current?.({ lat: pos.lat, lng: pos.lng });
     });
     dragMarkerRef.current = marker;
-  }, [draggableMarker?.lat, draggableMarker?.lng]);
+    if (cacheKey) mapCache.get(cacheKey)!.dragMarker = marker;
+  }, [draggableMarker?.lat, draggableMarker?.lng, cacheKey]);
 
   return (
     <div className={className} style={{ position: "relative", flex: 1, minHeight: 140 }}>

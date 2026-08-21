@@ -1,4 +1,4 @@
-import { supabase, SUPABASE_ANON_KEY } from "./supabase";
+import { supabase, SUPABASE_ANON_KEY, SUPABASE_STORAGE_URL } from "./supabase";
 import { CONFIG } from "./config";
 import type {
   Report,
@@ -48,18 +48,22 @@ export function friendlyUploadError(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
-/** PUTs a file to a Storage signed-upload-URL via raw XHR (rather than the
- * SDK's fetch-based `.upload()`) so upload progress is observable — `fetch`
- * request bodies have no progress events in any browser we support, but
- * `XMLHttpRequest.upload.onprogress` does. The body is `multipart/form-data`
- * with `cacheControl` as a field, matching exactly what
- * `@supabase/storage-js`'s own `uploadToSignedUrl()` sends for a Blob/File —
- * that's the shape the server's signed-upload endpoint actually parses, not
- * a raw body with a hand-set content-type header. Returns the live `xhr`
- * alongside the promise so a caller-side timeout can abort the in-flight
- * request instead of just abandoning it. */
-function xhrPutSignedUrl(
-  signedUrl: string,
+/** POSTs a file to `/object/{bucket}/{path}` via raw XHR — the exact same
+ * request the SDK's `.upload()` sends (same URL, method, and
+ * `multipart/form-data` body with `cacheControl` as a field), just over XHR
+ * instead of `fetch` so upload progress is observable
+ * (`XMLHttpRequest.upload.onprogress`; `fetch` bodies have none). Deliberately
+ * NOT going through `createSignedUploadUrl()` + a PUT to the signed URL: that
+ * route was tried first and confirmed (via a live request against this app's
+ * actual backend) to always fail with a 401 demanding HTTP Basic auth —
+ * something in front of that specific self-hosted deployment (Kong or the
+ * Cloudflare Tunnel) doesn't route that PUT correctly, while the plain POST
+ * endpoint below works. Returns the live `xhr` alongside the promise so a
+ * caller-side timeout can abort the in-flight request instead of just
+ * abandoning it. */
+function xhrUpload(
+  bucket: string,
+  path: string,
   file: File | Blob,
   authHeaders: { apikey: string; authorization: string },
   onProgress?: (fraction: number) => void
@@ -69,7 +73,7 @@ function xhrPutSignedUrl(
     const body = new FormData();
     body.append("cacheControl", "31536000");
     body.append("", file);
-    xhr.open("PUT", signedUrl);
+    xhr.open("POST", `${SUPABASE_STORAGE_URL}/object/${bucket}/${path}`);
     xhr.setRequestHeader("x-upsert", "false");
     xhr.setRequestHeader("apikey", authHeaders.apikey);
     xhr.setRequestHeader("authorization", authHeaders.authorization);
@@ -90,10 +94,7 @@ function xhrPutSignedUrl(
   return { promise, xhr };
 }
 
-/** Signs + PUTs one attempt, bounded end-to-end by `timeoutMs` — including
- * the `createSignedUploadUrl` round trip, which (unlike the XHR PUT) has no
- * native timeout of its own and could otherwise hang the whole retry loop
- * on a request that never resolves. */
+/** One upload attempt, bounded by `timeoutMs`. */
 async function attemptUpload(
   path: string,
   file: File | Blob,
@@ -105,17 +106,11 @@ async function attemptUpload(
   try {
     await Promise.race([
       (async () => {
-        const { data: signed, error: signErr } = await supabase.storage
-          .from(PHOTO_BUCKET)
-          .createSignedUploadUrl(path);
-        if (signErr) throw signErr;
-        if (!signed) throw new Error("No signed upload URL returned");
-        // Fetched as late as possible (right before the PUT, not before the
-        // signing round trip) so it's the freshest token available.
         const { data: session } = await supabase.auth.getSession();
         const accessToken = session.session?.access_token ?? SUPABASE_ANON_KEY;
-        const result = xhrPutSignedUrl(
-          signed.signedUrl,
+        const result = xhrUpload(
+          PHOTO_BUCKET,
+          path,
           file,
           { apikey: SUPABASE_ANON_KEY, authorization: `Bearer ${accessToken}` },
           onProgress
@@ -141,10 +136,9 @@ async function attemptUpload(
  * retry. Unique paths mean `toilet_photos.storage_path` always maps 1:1 to a
  * file, and no UPDATE policy is needed on storage.objects.
  *
- * Goes through `createSignedUploadUrl` + a raw XHR PUT (instead of the SDK's
- * `.upload()`) purely to get real upload-progress events; the signed URL
- * still requires the caller's insert permission on `storage.objects` at
- * request time, same as a plain `.upload()`. */
+ * Uses `xhrUpload()` (a raw-XHR mirror of the SDK's own `.upload()` POST)
+ * so real upload-progress events are available without changing the actual
+ * request the server sees. */
 async function storageUpload(
   makePath: () => string,
   file: File | Blob,

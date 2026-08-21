@@ -343,6 +343,13 @@ export function StepPhotos({
                       dragged.current = false;
                       return;
                     }
+                    // A failed photo's main tap target retries the upload —
+                    // the crop editor isn't useful (or reachable) for a photo
+                    // that never made it to storage and has no preview to fetch.
+                    if (p.status === "error") {
+                      retryPhoto(p.localId);
+                      return;
+                    }
                     openEditor(p);
                   }}
                 />
