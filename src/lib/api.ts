@@ -177,6 +177,7 @@ export async function getToilet(id: string): Promise<ToiletWithAuthor | null> {
     )
     .eq("id", id)
     .order("position", { ascending: true, foreignTable: "toilet_photos" })
+    .order("created_at", { ascending: false, foreignTable: "reviews" })
     .maybeSingle();
   if (error) throw error;
   return data as unknown as ToiletWithAuthor | null;

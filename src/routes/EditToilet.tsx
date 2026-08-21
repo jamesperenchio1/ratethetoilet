@@ -272,7 +272,7 @@ export function EditToilet() {
         />
 
         <div className="lbl">Location</div>
-        <div className="map" style={{ height: 180, borderRadius: 6, overflow: "hidden", border: "1.5px solid var(--border-strong)" }}>
+        <div className="map" style={{ height: 180, borderRadius: 6, overflow: "hidden", border: "1.5px solid var(--border-strong)", display: "flex", flexDirection: "column" }}>
           <MapView
             center={{ lat: form.lat, lng: form.lng }}
             draggableMarker={{ lat: form.lat, lng: form.lng }}
@@ -367,7 +367,7 @@ export function EditToilet() {
         </div>
         <textarea
           value={form.hint_note ?? ""}
-          onChange={(e) => setForm((prev) => ({ ...prev!, hint_note: e.target.value.trim() || null }))}
+          onChange={(e) => setForm((prev) => ({ ...prev!, hint_note: e.target.value || null }))}
           placeholder="Directions, what to look for…"
           rows={3}
           maxLength={CONFIG.wizard.hintNoteMaxLength}

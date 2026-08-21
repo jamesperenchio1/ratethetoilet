@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { TopBar } from "../components/layout/TopBar";
 import { ReportSheet } from "../components/ReportSheet";
@@ -28,7 +28,11 @@ export function ToiletDetail() {
   const [deleting, setDeleting] = useState(false);
   const [loadError, setLoadError] = useState(false);
   const [justPosted, setJustPosted] = useState(false);
-  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [dragIdx, setDragIdx] = useState<number | null>(null);
+  const [overIndex, setOverIndex] = useState<number | null>(null);
+  const dragStart = useRef<{ x: number; y: number; idx: number } | null>(null);
+  const dragged = useRef(false);
+  const touchStartX = useRef<number | null>(null);
   const [savingOrder, setSavingOrder] = useState(false);
   const [reorderError, setReorderError] = useState(false);
 
@@ -112,10 +116,8 @@ export function ToiletDetail() {
     return ids;
   }
 
-  function handleDrop(to: number) {
-    if (dragIndex === null || dragIndex === to || savingOrder) return;
-    const from = dragIndex;
-    setDragIndex(null);
+  function handleDrop(from: number, to: number) {
+    if (savingOrder) return;
     const ids = movePhoto(from, to);
     setPhotoIndex(from === photoIndex ? to : from > photoIndex && to <= photoIndex ? photoIndex + 1 : from < photoIndex && to >= photoIndex ? photoIndex - 1 : photoIndex);
     setToilet((prev) => (prev ? { ...prev, photos: ids.map((pid) => photos.find((p) => p.id === pid)!) } : prev));
@@ -134,6 +136,38 @@ export function ToiletDetail() {
       };
       save();
     }
+  }
+
+  function onThumbPointerDown(i: number) {
+    return (e: React.PointerEvent) => {
+      if (savingOrder) return;
+      dragStart.current = { x: e.clientX, y: e.clientY, idx: i };
+      dragged.current = false;
+      setDragIdx(null);
+      setOverIndex(null);
+    };
+  }
+
+  function onThumbPointerMove(e: React.PointerEvent) {
+    const start = dragStart.current;
+    if (!start) return;
+    if (!dragged.current && Math.hypot(e.clientX - start.x, e.clientY - start.y) < 6) return;
+    dragged.current = true;
+    setDragIdx(start.idx);
+    const el = document.elementFromPoint(e.clientX, e.clientY);
+    const target = el?.closest("[data-photo-idx]") as HTMLElement | null;
+    const idx = target ? Number(target.dataset.photoIdx) : NaN;
+    if (!Number.isNaN(idx)) setOverIndex(idx);
+  }
+
+  function onThumbPointerUp() {
+    const start = dragStart.current;
+    dragStart.current = null;
+    if (dragged.current && start && overIndex != null && overIndex !== start.idx) {
+      handleDrop(start.idx, overIndex);
+    }
+    setDragIdx(null);
+    setOverIndex(null);
   }
 
   const bar = (label: string, value: number | null) => (
@@ -157,7 +191,24 @@ export function ToiletDetail() {
       <div className="screen-body">
         {photos.length > 0 ? (
           <div>
-            <div style={{ position: "relative" }}>
+            <div
+              style={{ position: "relative" }}
+              onTouchStart={(e) => {
+                touchStartX.current = e.touches[0].clientX;
+              }}
+              onTouchEnd={(e) => {
+                if (touchStartX.current == null) return;
+                const delta = e.changedTouches[0].clientX - touchStartX.current;
+                touchStartX.current = null;
+                if (Math.abs(delta) > 40) {
+                  setPhotoIndex((i) =>
+                    delta > 0
+                      ? (i - 1 + photos.length) % photos.length
+                      : (i + 1) % photos.length
+                  );
+                }
+              }}
+            >
               <img
                 src={photoUrl(photos[photoIndex].storage_path)}
                 alt=""
@@ -170,6 +221,54 @@ export function ToiletDetail() {
                 }}
                 onClick={() => setViewer(true)}
               />
+              {photos.length > 1 && (
+                <span
+                  style={{
+                    position: "absolute",
+                    left: 6,
+                    top: "50%",
+                    transform: "translateY(-50%)",
+                    fontSize: 26,
+                    color: "#fff",
+                    background: "rgba(0,0,0,.35)",
+                    borderRadius: 6,
+                    cursor: "pointer",
+                    padding: "0 8px",
+                    lineHeight: 1,
+                  }}
+                  aria-label="Previous photo"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setPhotoIndex((i) => (i - 1 + photos.length) % photos.length);
+                  }}
+                >
+                  ‹
+                </span>
+              )}
+              {photos.length > 1 && (
+                <span
+                  style={{
+                    position: "absolute",
+                    right: 6,
+                    top: "50%",
+                    transform: "translateY(-50%)",
+                    fontSize: 26,
+                    color: "#fff",
+                    background: "rgba(0,0,0,.35)",
+                    borderRadius: 6,
+                    cursor: "pointer",
+                    padding: "0 8px",
+                    lineHeight: 1,
+                  }}
+                  aria-label="Next photo"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setPhotoIndex((i) => (i + 1) % photos.length);
+                  }}
+                >
+                  ›
+                </span>
+              )}
               <span
                 style={{
                   position: "absolute",
@@ -188,7 +287,7 @@ export function ToiletDetail() {
                   setReport({ type: "photo", id: photos[photoIndex].id, label: toilet.venue_name || "" })
                 }
               >
-                photo {photoIndex + 1}/{photos.length} · ⚑
+                photo {photoIndex + 1}/{photos.length} · <b style={{ color: "var(--red-3)" }}>⚑</b>
               </span>
             </div>
             {photos.length > 1 && (
@@ -204,26 +303,18 @@ export function ToiletDetail() {
                       overflow: "hidden",
                       cursor: isAuthor ? "grab" : "pointer",
                       border: `2px solid ${
-                        i === photoIndex ? "var(--chart-4)" : "var(--border-strong)"
+                        i === photoIndex
+                          ? "var(--chart-4)"
+                          : overIndex === i && dragIdx != null
+                            ? "var(--red-3)"
+                            : "var(--border-strong)"
                       }`,
-                      opacity: dragIndex === i ? 0.5 : 1,
+                      opacity: dragIdx === i ? 0.5 : 1,
                       touchAction: "none",
                     }}
-                    onPointerDown={isAuthor ? (e) => {
-                      if (savingOrder) return;
-                      e.preventDefault();
-                      setDragIndex(i);
-                      const move = (ev: PointerEvent) => {
-                        const target = (ev.target as HTMLElement).closest("[data-photo-idx]");
-                        if (target) handleDrop(Number((target as HTMLElement).dataset.photoIdx));
-                      };
-                      const up = () => {
-                        window.removeEventListener("pointermove", move);
-                        window.removeEventListener("pointerup", up);
-                      };
-                      window.addEventListener("pointermove", move);
-                      window.addEventListener("pointerup", up);
-                    } : undefined}
+                    onPointerDown={isAuthor ? onThumbPointerDown(i) : undefined}
+                    onPointerMove={isAuthor ? onThumbPointerMove : undefined}
+                    onPointerUp={isAuthor ? onThumbPointerUp : undefined}
                     onClick={isAuthor ? undefined : () => setPhotoIndex(i)}
                   >
                     <img
@@ -326,7 +417,7 @@ export function ToiletDetail() {
               <span
                 role="button"
                 aria-label="Report how-to-find note"
-                style={{ cursor: "pointer", minHeight: 32, display: "inline-flex", alignItems: "center", padding: "0 4px" }}
+                style={{ cursor: "pointer", color: "var(--red-3)", minHeight: 32, display: "inline-flex", alignItems: "center", padding: "0 4px" }}
                 onClick={() => setReport({ type: "hint", id: toilet.id, label: "how-to-find-it note" })}
               >
                 ⚑ report
@@ -366,11 +457,11 @@ export function ToiletDetail() {
           <div key={r.id} className="box" style={{ fontSize: 11 }}>
             "{r.body}"{" "}
             <span style={{ color: "var(--text-muted)" }}>
-              {r.author?.handle ?? "unknown"} ·{" "}
+              {r.author?.handle ?? "unknown"} · {new Date(r.created_at).toLocaleString()} ·{" "}
               <span
                 role="button"
                 aria-label="Report this review"
-                style={{ cursor: "pointer", minHeight: 32, display: "inline-flex", alignItems: "center", padding: "0 4px" }}
+                style={{ cursor: "pointer", color: "var(--red-3)", minHeight: 32, display: "inline-flex", alignItems: "center", padding: "0 4px" }}
                 onClick={() => setReport({ type: "review", id: r.id, label: r.body })}
               >
                 ⚑ report
