@@ -38,6 +38,7 @@ export function Search() {
   const [recents, setRecents] = useState<string[]>([]);
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
   const placesAbort = useRef<AbortController | null>(null);
+  const toiletsQueryRef = useRef("");
 
   useEffect(() => {
     get(RECENTS_KEY).then((r) => setRecents(r ?? []));
@@ -53,11 +54,16 @@ export function Search() {
     placesAbort.current?.abort();
     const controller = new AbortController();
     placesAbort.current = controller;
+    toiletsQueryRef.current = query;
     setPlacesSearching(true);
     const t = setTimeout(() => {
-      searchToilets(query.trim()).then(setResults);
+      searchToilets(query.trim()).then((rows) => {
+        if (toiletsQueryRef.current === query) setResults(rows);
+      });
       searchPlaces(query.trim(), { near, signal: controller.signal })
-        .then(setPlaces)
+        .then((rows) => {
+          if (toiletsQueryRef.current === query) setPlaces(rows);
+        })
         .finally(() => setPlacesSearching(false));
     }, CONFIG.search.debounceMs);
     return () => {

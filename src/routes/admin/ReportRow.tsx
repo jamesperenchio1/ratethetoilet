@@ -4,10 +4,22 @@ import { banHandle, getReportTarget, hideContent, resolveReport } from "../../li
 
 export function ReportRow({ report, onChanged }: { report: Report; onChanged: () => void }) {
   const [target, setTarget] = useState<Awaited<ReturnType<typeof getReportTarget>>>(undefined as never);
+  const [targetError, setTargetError] = useState(false);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    getReportTarget(report).then(setTarget);
+    let cancelled = false;
+    setTargetError(false);
+    getReportTarget(report)
+      .then((t) => {
+        if (!cancelled) setTarget(t);
+      })
+      .catch(() => {
+        if (!cancelled) setTargetError(true);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [report]);
 
   async function act(fn: () => Promise<void>) {
@@ -28,7 +40,9 @@ export function ReportRow({ report, onChanged }: { report: Report; onChanged: ()
       </div>
       <div style={{ fontSize: 13 }}>{report.reason}</div>
       {report.note && <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>"{report.note}"</div>}
-      {target === undefined ? (
+      {targetError ? (
+        <div style={{ fontSize: 11, color: "var(--text-muted)" }}>Couldn't load target.</div>
+      ) : target === undefined ? (
         <div style={{ fontSize: 11, color: "var(--text-muted)" }}>Loading target…</div>
       ) : target === null ? (
         <div style={{ fontSize: 11, color: "var(--text-muted)" }}>Target no longer exists.</div>

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { MapView, locateDevice } from "../components/map/MapView";
 import { ToiletCard } from "../components/toilet/ToiletCard";
@@ -117,13 +117,32 @@ export function Home() {
   );
 
   // One pin per toilet — every listing is on the map, not just nearby ones.
-  const pins = filtered.map((t) => ({
-    id: t.id,
-    lat: t.lat,
-    lng: t.lng,
-    score: t.overall_score,
-    label: t.venue_name || venueTypesLabel(t.venue_types) || undefined,
-  }));
+  const pins = useMemo(
+    () =>
+      filtered.map((t) => ({
+        id: t.id,
+        lat: t.lat,
+        lng: t.lng,
+        score: t.overall_score,
+        label: t.venue_name || venueTypesLabel(t.venue_types) || undefined,
+      })),
+    [filtered]
+  );
+
+  const onGpsClick = useCallback(() => {
+    locateDevice()
+      .then((c) => {
+        setCenter(c);
+        setGpsFailed(false);
+      })
+      .catch(() => setGpsFailed(true));
+  }, []);
+
+  const onDraggableMarkerMove = useCallback(
+    (pos: { lat: number; lng: number }) =>
+      setPlaceMarker((m) => (m ? { ...m, ...pos } : m)),
+    []
+  );
 
   return (
     <>
@@ -133,16 +152,9 @@ export function Home() {
           center={center}
           fitToPins={!hadNavCenter.current}
           onPinClick={(id) => navigate(`/t/${id}`)}
-          onGpsClick={() =>
-            locateDevice()
-              .then((c) => {
-                setCenter(c);
-                setGpsFailed(false);
-              })
-              .catch(() => setGpsFailed(true))
-          }
+          onGpsClick={onGpsClick}
           draggableMarker={placeMarker ?? undefined}
-          onDraggableMarkerMove={(pos) => setPlaceMarker((m) => (m ? { ...m, ...pos } : m))}
+          onDraggableMarkerMove={onDraggableMarkerMove}
         />
 
         <div

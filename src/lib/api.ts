@@ -61,22 +61,25 @@ async function storageUpload(
       );
     }
     const path = makePath();
+    let timer: ReturnType<typeof setTimeout> | undefined;
     try {
       const result = await Promise.race([
         supabase.storage.from(PHOTO_BUCKET).upload(path, file, {
           contentType: file.type || "image/jpeg",
           cacheControl: "31536000",
         }),
-        new Promise<never>((_, reject) =>
-          setTimeout(
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(
             () => reject(new Error(`upload timed out after ${UPLOAD_TIMEOUT_MS / 1000}s`)),
             UPLOAD_TIMEOUT_MS * (attempt + 1)
-          )
-        ),
+          );
+        }),
       ]);
+      clearTimeout(timer);
       if (result.error) throw result.error;
       return path;
     } catch (err) {
+      clearTimeout(timer);
       lastErr = err;
     }
   }
@@ -127,10 +130,7 @@ export async function listToiletsNear(
 export async function listAllToilets(): Promise<Toilet[]> {
   const { data, error } = await supabase
     .from("toilets")
-    .select(
-      `*, photos:toilet_photos(storage_path, position, hidden)`,
-      { count: "exact" }
-    )
+    .select(`*, photos:toilet_photos(storage_path, position, hidden)`)
     .eq("hidden", false)
     .order("created_at", { ascending: false })
     .order("position", { ascending: true, foreignTable: "toilet_photos" })
@@ -142,10 +142,7 @@ export async function listAllToilets(): Promise<Toilet[]> {
 export async function searchToilets(query: string): Promise<Toilet[]> {
   const { data, error } = await supabase
     .from("toilets")
-    .select(
-      `*, photos:toilet_photos(storage_path, position, hidden)`,
-      { count: "exact" }
-    )
+    .select(`*, photos:toilet_photos(storage_path, position, hidden)`)
     .eq("hidden", false)
     .ilike("venue_name", `%${query}%`)
     .order("position", { ascending: true, foreignTable: "toilet_photos" })
@@ -286,8 +283,10 @@ export async function deleteToiletPhoto(photo: ToiletPhoto): Promise<void> {
     const { error: rmErr } = await supabase.storage
       .from(PHOTO_BUCKET)
       .remove([photo.storage_path]);
-    // A missing object is fine — the row is the source of truth.
-    if (rmErr && rmErr.message !== "Object not found") throw rmErr;
+    // A storage-remove failure (including an already-missing object) is never
+    // fatal — the row is the source of truth. Log and continue so the row
+    // delete isn't blocked by an unrelated storage error.
+    if (rmErr) console.warn("Failed to remove photo object from storage", rmErr);
   }
   const { error } = await supabase
     .from("toilet_photos")
@@ -336,7 +335,9 @@ export async function updateOwnToilet(
 ): Promise<Toilet> {
   const { data, error } = await supabase.rpc("update_own_toilet", {
     p_id: id,
-    p_patch: JSON.parse(JSON.stringify(patch)),
+    p_patch: Object.fromEntries(
+      Object.entries(patch).filter(([, v]) => v !== undefined)
+    ),
   });
   if (error) throw error;
   return data as Toilet;
@@ -409,7 +410,7 @@ export interface ReviewWithToilet extends Review {
 }
 
 export async function myContributions(authorId: string) {
-  const [{ data: toilets }, { data: reviews }] = await Promise.all([
+  const [toiletsRes, reviewsRes] = await Promise.all([
     supabase.from("toilets").select("*").eq("author_id", authorId),
     supabase
       .from("reviews")
@@ -417,9 +418,11 @@ export async function myContributions(authorId: string) {
       .eq("author_id", authorId)
       .order("created_at", { ascending: false }),
   ]);
+  if (toiletsRes.error) throw toiletsRes.error;
+  if (reviewsRes.error) throw reviewsRes.error;
   return {
-    toilets: (toilets ?? []) as Toilet[],
-    reviews: (reviews ?? []) as unknown as ReviewWithToilet[],
+    toilets: (toiletsRes.data ?? []) as Toilet[],
+    reviews: (reviewsRes.data ?? []) as unknown as ReviewWithToilet[],
   };
 }
 

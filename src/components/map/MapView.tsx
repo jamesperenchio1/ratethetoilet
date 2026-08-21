@@ -144,6 +144,10 @@ export function MapView({
     onPinClickRef.current = onPinClick;
   }, [onPinClick]);
   const dragMarkerRef = useRef<Marker | null>(null);
+  const onDragMoveRef = useRef(onDraggableMarkerMove);
+  useEffect(() => {
+    onDragMoveRef.current = onDraggableMarkerMove;
+  }, [onDraggableMarkerMove]);
   const fitDoneRef = useRef(false);
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
@@ -298,10 +302,10 @@ export function MapView({
       .addTo(map);
     marker.on("dragend", () => {
       const pos = marker.getLngLat();
-      onDraggableMarkerMove?.({ lat: pos.lat, lng: pos.lng });
+      onDragMoveRef.current?.({ lat: pos.lat, lng: pos.lng });
     });
     dragMarkerRef.current = marker;
-  }, [draggableMarker?.lat, draggableMarker?.lng, onDraggableMarkerMove]);
+  }, [draggableMarker?.lat, draggableMarker?.lng]);
 
   return (
     <div className={className} style={{ position: "relative", flex: 1, minHeight: 140 }}>

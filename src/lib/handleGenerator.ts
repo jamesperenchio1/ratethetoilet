@@ -16,11 +16,15 @@ export function generateHandle(): string {
   return withSuffix.length <= MAX_HANDLE_LENGTH ? withSuffix : base;
 }
 
-/** Generates `count` suggestions, distinct within this batch. */
+/** Generates `count` suggestions, distinct within this batch. The handle
+ * space (adjectives × nouns, with an optional numeric suffix) is far larger
+ * than any requested count, so with a generous collision bound the batch is
+ * effectively guaranteed to fill — but we stop early rather than loop
+ * forever in the impossible case the RNG never yields a new handle. */
 export function generateHandleBatch(count = CONFIG.handle.suggestionCount): string[] {
   const set = new Set<string>();
   let attempts = 0;
-  while (set.size < count && attempts < count * 20) {
+  while (set.size < count && attempts < count * 100) {
     set.add(generateHandle());
     attempts++;
   }

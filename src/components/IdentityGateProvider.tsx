@@ -38,10 +38,19 @@ export function IdentityGateProvider({ children }: { children: ReactNode }) {
   );
 
   async function handleConfirm(handle: string) {
-    const updated = await auth.setHandle(handle);
-    setShowHandleSheet(false);
-    const pending = resolversRef.current.splice(0);
-    pending.forEach((r) => r.resolve(updated));
+    try {
+      const updated = await auth.setHandle(handle);
+      setShowHandleSheet(false);
+      const pending = resolversRef.current.splice(0);
+      pending.forEach((r) => r.resolve(updated));
+    } catch (e) {
+      // If setHandle fails (e.g. network error or the handle was taken), reject
+      // any pending withIdentity resolvers so the first-write action settles
+      // instead of hanging forever. The sheet stays open so the user can retry.
+      const pending = resolversRef.current.splice(0);
+      pending.forEach((r) => r.reject(e));
+      throw e;
+    }
   }
 
   return (

@@ -38,7 +38,10 @@ function loadScript(): Promise<void> {
       el.src = "https://challenges.cloudflare.com/turnstile/v0/api.js";
       el.async = true;
       el.onload = () => resolve();
-      el.onerror = () => reject(new Error("Failed to load Turnstile"));
+      el.onerror = () => {
+        scriptPromise = null;
+        reject(new Error("Failed to load Turnstile"));
+      };
       document.head.appendChild(el);
     });
   }
@@ -65,17 +68,20 @@ export async function getTurnstileToken(): Promise<string | null> {
       container.remove();
     };
     let id: string;
+    const timer = setTimeout(() => {
+      if (id) cleanup(id);
+      resolve(null);
+    }, 10_000);
+    const settled = (value: string | null, idToClean: string) => {
+      clearTimeout(timer);
+      cleanup(idToClean);
+      resolve(value);
+    };
     id = window.turnstile!.render(container, {
       sitekey: siteKey,
       size: "invisible",
-      callback: (token) => {
-        resolve(token);
-        cleanup(id);
-      },
-      "error-callback": () => {
-        resolve(null);
-        cleanup(id);
-      },
+      callback: (token) => settled(token, id),
+      "error-callback": () => settled(null, id),
     });
   });
 }

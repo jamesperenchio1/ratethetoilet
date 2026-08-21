@@ -84,16 +84,19 @@ export async function compressImage(file: File): Promise<CompressResult> {
     // Path 1: createImageBitmap.
     try {
       const bitmap = await createImageBitmap(file);
-      const scale = Math.min(
-        1,
-        MAX_DIMENSION / Math.max(bitmap.width, bitmap.height)
-      );
-      blob = await drawToBlob(
-        bitmap,
-        bitmap.width * scale,
-        bitmap.height * scale
-      );
-      bitmap.close();
+      try {
+        const scale = Math.min(
+          1,
+          MAX_DIMENSION / Math.max(bitmap.width, bitmap.height)
+        );
+        blob = await drawToBlob(
+          bitmap,
+          bitmap.width * scale,
+          bitmap.height * scale
+        );
+      } finally {
+        bitmap.close();
+      }
     } catch {
       blob = null;
     }

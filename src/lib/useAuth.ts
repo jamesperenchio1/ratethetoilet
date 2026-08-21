@@ -47,9 +47,11 @@ export function useAuth() {
 
     const { data: sub } = supabase.auth.onAuthStateChange(
       async (_event, newSession) => {
+        if (!mounted) return;
         setSession(newSession);
         if (newSession) {
           const p = await loadProfile(newSession.user.id);
+          if (!mounted) return;
           setProfile(p);
         } else {
           setProfile(null);
