@@ -3,6 +3,8 @@ import { useNavigate, useParams } from "react-router-dom";
 import { TopBar } from "../components/layout/TopBar";
 import { ReportSheet } from "../components/ReportSheet";
 import { getToilet, addReview, photoUrl, deleteOwnToilet, reorderToiletPhotos } from "../lib/api";
+import { addressFromFlat } from "../lib/geocode";
+import { AddressBlock } from "../components/AddressBlock";
 import { enqueuePost } from "../lib/offlineQueue";
 import { accessTypesLabel, venueTypesLabel } from "../lib/labels";
 import { scoreColor } from "../lib/score";
@@ -184,6 +186,7 @@ export function ToiletDetail() {
 
   const displayName = toilet.venue_name || venueTypesLabel(toilet.venue_types) || "Toilet";
   const title = toilet.floor ? `${displayName} · Floor ${toilet.floor}` : displayName;
+  const address = addressFromFlat(toilet);
 
   return (
     <>
@@ -376,6 +379,12 @@ export function ToiletDetail() {
               <span style={{ fontSize: 13 }}>{toilet.supplies.join(", ")}</span>
             </div>
           )}
+          {address && (
+            <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+              <span className="lbl" style={{ flexShrink: 0, width: 76 }}>Address</span>
+              <AddressBlock address={address} />
+            </div>
+          )}
         </div>
 
         {profile?.id === toilet.author_id && (
@@ -482,7 +491,7 @@ export function ToiletDetail() {
         <a
           className="btn"
           style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}
-          href={`https://www.google.com/maps/search/?api=1&query=${toilet.lat},${toilet.lng}`}
+          href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(displayName)}@${toilet.lat},${toilet.lng}`}
           target="_blank"
           rel="noreferrer"
         >

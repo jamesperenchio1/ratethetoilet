@@ -4,6 +4,7 @@ import { MapView, locateDevice } from "../components/map/MapView";
 import { ToiletCard } from "../components/toilet/ToiletCard";
 import { listAllToilets } from "../lib/api";
 import { haversineMeters, venueTypesLabel } from "../lib/labels";
+import { groupToiletsByVenue, groupScore } from "../lib/venueGrouping";
 import { CONFIG } from "../lib/config";
 import type { Toilet } from "../lib/types";
 
@@ -116,18 +117,35 @@ export function Home() {
     [filtered, center]
   );
 
-  // One pin per toilet — every listing is on the map, not just nearby ones.
-  const pins = useMemo(
-    () =>
-      filtered.map((t) => ({
+  // Group toilets that belong to the same venue into one pin, so a
+  // multi-floor place shows as a single tappable pin with a "N" count
+  // instead of several overlapping ones. Single-toilet venues stay as-is.
+  const { pins, pinTargets } = useMemo(() => {
+    const groups = groupToiletsByVenue(filtered);
+    const targets = new Map<string, string>();
+    const out = groups.map((g) => {
+      if (g.toilets.length > 1) {
+        targets.set(g.key, g.toilets[0].id);
+        return {
+          id: g.key,
+          lat: g.lat,
+          lng: g.lng,
+          score: groupScore(g),
+          label: g.name ?? undefined,
+          count: g.toilets.length,
+        };
+      }
+      const t = g.toilets[0];
+      return {
         id: t.id,
         lat: t.lat,
         lng: t.lng,
         score: t.overall_score,
         label: t.venue_name || venueTypesLabel(t.venue_types) || undefined,
-      })),
-    [filtered]
-  );
+      };
+    });
+    return { pins: out, pinTargets: targets };
+  }, [filtered]);
 
   const onGpsClick = useCallback(() => {
     locateDevice()
@@ -152,7 +170,7 @@ export function Home() {
           pins={pins}
           center={center}
           fitToPins={!hadNavCenter.current}
-          onPinClick={(id) => navigate(`/t/${id}`)}
+          onPinClick={(id) => navigate(`/t/${pinTargets.get(id) ?? id}`)}
           onGpsClick={onGpsClick}
           draggableMarker={placeMarker ?? undefined}
           onDraggableMarkerMove={onDraggableMarkerMove}

@@ -6,12 +6,31 @@ import { CONFIG } from "./config";
 
 const NOMINATIM_BASE = "https://nominatim.openstreetmap.org";
 
+/** Structured address returned by Nominatim's `addressdetails=1`, kept so we
+ * can render a Google-Maps-style multi-line address instead of just a name. */
+export interface Address {
+  road?: string;
+  house_number?: string;
+  neighbourhood?: string;
+  suburb?: string;
+  city_district?: string;
+  city?: string;
+  state?: string;
+  postcode?: string;
+  country?: string;
+  amenity?: string;
+  shop?: string;
+  building?: string;
+  village?: string;
+}
+
 export interface GeocodeResult {
   id: string;
   name: string;
   displayName: string;
   lat: number;
   lng: number;
+  address?: Address;
 }
 
 interface NominatimRow {
@@ -77,6 +96,130 @@ function fullName(row: NominatimRow): string {
   return context.length ? `${primary}, ${context.join(", ")}` : primary;
 }
 
+/** Strip the noise keys we don't persist, keeping a clean structured address. */
+function toAddress(raw?: Record<string, string>): Address | undefined {
+  if (!raw) return undefined;
+  return {
+    road: raw.road,
+    house_number: raw.house_number,
+    neighbourhood: raw.neighbourhood,
+    suburb: raw.suburb,
+    city_district: raw.city_district,
+    city: raw.city,
+    state: raw.state,
+    postcode: raw.postcode,
+    country: raw.country,
+    amenity: raw.amenity,
+    shop: raw.shop,
+    building: raw.building,
+    village: raw.village,
+  };
+}
+
+/** Shared mapping from a raw Nominatim row to our normalized result. */
+function toGeocodeResult(row: NominatimRow): GeocodeResult {
+  return {
+    id: String(row.place_id),
+    name: fullName(row),
+    displayName: row.display_name,
+    lat: Number(row.lat),
+    lng: Number(row.lon),
+    address: toAddress(row.address),
+  };
+}
+
+const VALID_ADDRESS_KEYS: (keyof Address)[] = [
+  "building",
+  "amenity",
+  "shop",
+  "house_number",
+  "road",
+  "village",
+  "neighbourhood",
+  "suburb",
+  "city_district",
+  "city",
+  "postcode",
+  "country",
+];
+
+/**
+ * Render a structured address the way Google Maps does: most specific line
+ * first (venue/building, then street + number), then area, city/district,
+ * postcode, and finally country. Drops empty parts and dedupes consecutive
+ * repeats. Pure so it's unit-testable.
+ */
+export function formatAddress(address: Address | undefined, opts: { includeCountry?: boolean } = {}): string {
+  if (!address) return "";
+  const parts: string[] = [];
+
+  const venue = address.building || address.amenity || address.shop;
+  if (venue && venue !== address.road) parts.push(venue);
+
+  if (address.house_number || address.road) {
+    parts.push([address.house_number, address.road].filter(Boolean).join(" "));
+  }
+
+  const area = address.village || address.neighbourhood || address.suburb;
+  if (area && area !== address.road && area !== venue) parts.push(area);
+
+  const city = address.city_district || address.city;
+  if (city && city !== area && city !== address.road) parts.push(city);
+
+  if (address.postcode && address.postcode !== city && address.postcode !== area) parts.push(address.postcode);
+
+  if (opts.includeCountry && address.country && address.country !== city && address.country !== area) {
+    parts.push(address.country);
+  }
+
+  return parts.join("\n");
+}
+
+/** Flatten a structured address into the toilet row's denormalized address_* columns. */
+export function flattenAddress(address: Address | null | undefined): {
+  address_road: string | null;
+  address_house_number: string | null;
+  address_suburb: string | null;
+  address_city: string | null;
+  address_postcode: string | null;
+  address_country: string | null;
+} {
+  return {
+    address_road: address?.road ?? null,
+    address_house_number: address?.house_number ?? null,
+    address_suburb: address?.suburb ?? null,
+    address_city: address?.city ?? null,
+    address_postcode: address?.postcode ?? null,
+    address_country: address?.country ?? null,
+  };
+}
+
+/** Rebuild a structured Address from a toilet row's flat address_* columns. */
+export function addressFromFlat(flat: {
+  address_road?: string | null;
+  address_house_number?: string | null;
+  address_suburb?: string | null;
+  address_city?: string | null;
+  address_postcode?: string | null;
+  address_country?: string | null;
+}): Address | undefined {
+  const parts: [keyof Address, string | null | undefined][] = [
+    ["road", flat.address_road],
+    ["house_number", flat.address_house_number],
+    ["suburb", flat.address_suburb],
+    ["city", flat.address_city],
+    ["postcode", flat.address_postcode],
+    ["country", flat.address_country],
+  ];
+  const has = parts.some(([, v]) => v != null && v !== "");
+  if (!has) return undefined;
+  const addr: Address = {};
+  for (const [key, v] of parts) {
+    if (v != null && v !== "") addr[key] = v;
+  }
+  return addr;
+}
+
 /** Best-effort place name for a dropped/dragged pin — falls back to null on any failure. */
 export async function reverseGeocode(
   lat: number,
@@ -89,13 +232,7 @@ export async function reverseGeocode(
     if (!res.ok) return null;
     const row = (await res.json()) as NominatimRow;
     if (!row || !row.display_name) return null;
-    return {
-      id: String(row.place_id),
-      name: fullName(row),
-      displayName: row.display_name,
-      lat: Number(row.lat),
-      lng: Number(row.lon),
-    };
+    return toGeocodeResult(row);
   } catch {
     return null;
   }
@@ -124,14 +261,12 @@ export async function searchPlaces(
     const res = await fetchWithTimeout(`${NOMINATIM_BASE}/search?${params.toString()}`, opts.signal);
     if (!res.ok) return [];
     const rows = (await res.json()) as NominatimRow[];
-    return rows.map((row) => ({
-      id: String(row.place_id),
-      name: fullName(row),
-      displayName: row.display_name,
-      lat: Number(row.lat),
-      lng: Number(row.lon),
-    }));
+    return rows.map(toGeocodeResult);
   } catch {
     return [];
   }
 }
+
+// Re-exported so UI code that only imports from geocode can use these keys for
+// building flat address columns.
+export { VALID_ADDRESS_KEYS };
