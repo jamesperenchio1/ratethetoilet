@@ -1,4 +1,5 @@
 import type { TriState } from "../../lib/types";
+import type { Address } from "../../lib/geocode";
 import { CONFIG } from "../../lib/config";
 
 export interface PendingPhoto {
@@ -57,6 +58,8 @@ export interface ToiletDraft {
   venueName: string | null;
   /** Resolved venue id (null = create a new venue on submit). */
   venueId: string | null;
+  /** Structured address resolved from Nominatim, shown and persisted. */
+  address: Address | null;
   accessTypes: string[];
   supplies: string[];
 }
@@ -73,6 +76,7 @@ export function emptyDraft(): ToiletDraft {
     venueTypes: [],
     venueName: null,
     venueId: null,
+    address: null,
     accessTypes: [],
     supplies: [],
   };

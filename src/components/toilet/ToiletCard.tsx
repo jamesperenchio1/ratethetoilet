@@ -14,6 +14,9 @@ export function ToiletCard({
   const navigate = useNavigate();
   const title = toilet.venue_name || venueTypesLabel(toilet.venue_types) || "Toilet";
   const thumb = toilet.photo_storage_path ? photoUrl(toilet.photo_storage_path) : null;
+  const addressLine = [toilet.address_house_number, toilet.address_road, toilet.address_suburb]
+    .filter(Boolean)
+    .join(", ");
   return (
     <div
       className="box toilet-card"
@@ -51,6 +54,18 @@ export function ToiletCard({
           <span>{venueTypesLabel(toilet.venue_types)}</span>
           {distanceMeters != null && <span>· {distanceLabel(distanceMeters)}</span>}
           <span>· {accessTypesLabel(toilet.access_types)}</span>
+          {addressLine && (
+            <span
+              style={{
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+                maxWidth: "100%",
+              }}
+            >
+              · {addressLine}
+            </span>
+          )}
         </div>
       </div>
     </div>

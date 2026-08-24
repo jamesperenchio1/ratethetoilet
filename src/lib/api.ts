@@ -102,6 +102,12 @@ export interface NewToiletInput {
   location_source?: Toilet["location_source"];
   floor?: string | null;
   venue_id?: string | null;
+  address_road?: string | null;
+  address_house_number?: string | null;
+  address_suburb?: string | null;
+  address_city?: string | null;
+  address_postcode?: string | null;
+  address_country?: string | null;
 }
 
 export async function canPost(): Promise<{ allowed: boolean; retryAt: string | null }> {
@@ -327,6 +333,12 @@ export interface ToiletEditInput {
   lng: number;
   location_source: Toilet["location_source"];
   venue_id: string | null;
+  address_road: string | null;
+  address_house_number: string | null;
+  address_suburb: string | null;
+  address_city: string | null;
+  address_postcode: string | null;
+  address_country: string | null;
 }
 
 export async function updateOwnToilet(

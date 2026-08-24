@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { TopBar } from "../../components/layout/TopBar";
 import { useIdentity } from "../../components/IdentityGateProvider";
 import { canPost, createToilet, attachDraftPhotos, findOrCreateVenue, addReview, type NewToiletInput } from "../../lib/api";
+import { flattenAddress } from "../../lib/geocode";
 import { enqueuePost } from "../../lib/offlineQueue";
 import { emptyDraft, type FloorEntry, type ToiletDraft } from "./types";
 import { getTurnstileToken } from "../../lib/turnstile";
@@ -43,6 +44,7 @@ function entryToInput(draft: ToiletDraft, entry: FloorEntry, venueId: string | n
     location_source: draft.locationSource,
     floor: entry.floorLabel,
     venue_id: venueId,
+    ...flattenAddress(draft.address),
   };
 }
 

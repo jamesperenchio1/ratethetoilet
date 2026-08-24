@@ -17,6 +17,7 @@ import { ACCESS_LABELS, venueTypeLabel } from "../lib/labels";
 import { CONFIG } from "../lib/config";
 import { overallScore, scoreColor, scoreLabel } from "../lib/score";
 import { MapView, locateDevice } from "../components/map/MapView";
+import { reverseGeocode, flattenAddress } from "../lib/geocode";
 import type { ToiletWithAuthor, TriState, Venue, VenueTypeDef } from "../lib/types";
 
 const ACCESSES = Object.keys(ACCESS_LABELS);
@@ -65,6 +66,12 @@ export function EditToilet() {
       lng: toilet.lng,
       location_source: toilet.location_source ?? null,
       venue_id: toilet.venue_id ?? null,
+      address_road: toilet.address_road ?? null,
+      address_house_number: toilet.address_house_number ?? null,
+      address_suburb: toilet.address_suburb ?? null,
+      address_city: toilet.address_city ?? null,
+      address_postcode: toilet.address_postcode ?? null,
+      address_country: toilet.address_country ?? null,
     });
   }, [toilet, form]);
 
@@ -107,6 +114,22 @@ export function EditToilet() {
   const isAuthor = !!profile && toilet?.author_id === profile.id;
   const photos = useMemo(() => toilet?.photos?.filter((p) => !p.hidden) ?? [], [toilet]);
   const overall = form ? overallScore(form.cleanliness, form.smell, form.privacy) : null;
+
+  // Refresh the denormalized address whenever the pin moves (drag or GPS), so
+  // edits carry fresh Google-Maps-style location detail too.
+  useEffect(() => {
+    if (!form) return;
+    if (form.location_source === "search") return;
+    const t = setTimeout(() => {
+      reverseGeocode(form.lat, form.lng).then((hit) => {
+        if (hit) {
+          setForm((prev) => ({ ...prev!, ...flattenAddress(hit.address) }));
+        }
+      });
+    }, CONFIG.wizard.reverseGeocodeDelayMs);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form?.lat, form?.lng, form?.location_source]);
 
   if (!toilet) return <div className="screen-body">Loading…</div>;
   if (!isAuthor) {
