@@ -104,32 +104,43 @@ describe("reverseGeocode", () => {
     vi.unstubAllGlobals();
   });
 
-  function stubFetch(byLayer: { address: object; poi: object | null }) {
+  function stubFetch(byLayer: { address: object; transit: object | null }) {
     vi.stubGlobal(
       "fetch",
       vi.fn((url: string) => {
-        const body = url.includes("layer=") ? byLayer.poi : byLayer.address;
+        const body = url.includes("layer=railway") ? byLayer.transit : byLayer.address;
         if (!body) return Promise.resolve({ ok: false, json: async () => ({}) });
         return Promise.resolve({ ok: true, json: async () => body });
       })
     );
   }
 
-  it("snaps to a named POI a few meters from the pin instead of the road it sits on", async () => {
+  it("snaps to a named transit stop a few meters from the pin instead of the road it sits on", async () => {
     stubFetch({
       address: { place_id: 1, display_name: "Phahon Yothin Road, Bangkok", lat: "13.9249", lon: "100.6258" },
-      poi: { place_id: 2, display_name: "แยก คปอ., Bangkok", name: "แยก คปอ.", lat: "13.9250126", lon: "100.6258374" },
+      transit: { place_id: 2, display_name: "แยก คปอ., Bangkok", name: "แยก คปอ.", lat: "13.9250126", lon: "100.6258374" },
     });
     const result = await reverseGeocode(13.9249, 100.6258);
     expect(result?.name).toBe("แยก คปอ.");
   });
 
-  it("falls back to the road when the nearest POI is far from the pin", async () => {
+  it("falls back to the road when the nearest transit stop is far from the pin", async () => {
     stubFetch({
       address: { place_id: 1, display_name: "Phahon Yothin Road, Bangkok", lat: "13.9249", lon: "100.6258" },
-      poi: { place_id: 3, display_name: "Some Distant Place", name: "Some Distant Place", lat: "13.93", lon: "100.63" },
+      transit: { place_id: 3, display_name: "Some Distant Station", name: "Some Distant Station", lat: "13.93", lon: "100.63" },
     });
     const result = await reverseGeocode(13.9249, 100.6258);
     expect(result?.displayName).toBe("Phahon Yothin Road, Bangkok");
+  });
+
+  it("never snaps to a shop or mall — only the railway layer is queried, never the broader poi layer", async () => {
+    stubFetch({
+      address: { place_id: 1, display_name: "Small Shop, Bangkok", name: "Small Shop", lat: "13.9249", lon: "100.6258" },
+      transit: null,
+    });
+    await reverseGeocode(13.9249, 100.6258);
+    const fetchMock = fetch as unknown as ReturnType<typeof vi.fn>;
+    const urls = fetchMock.mock.calls.map((call) => call[0] as string);
+    expect(urls.some((u) => u.includes("layer=poi"))).toBe(false);
   });
 });
