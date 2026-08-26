@@ -220,22 +220,48 @@ export function addressFromFlat(flat: {
   return addr;
 }
 
+/** Nominatim's default reverse lookup returns whichever single feature is
+ * geometrically nearest, and a long road way often wins over a named POI's
+ * point geometry (e.g. a transit station) even a few meters off. Snap to a
+ * named POI within this radius of the dropped pin instead of the road. */
+const POI_SNAP_RADIUS_M = 50;
+
+function distanceMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const latRad = (lat1 * Math.PI) / 180;
+  const dLat = (lat2 - lat1) * 110_540;
+  const dLng = (lng2 - lng1) * 111_320 * Math.cos(latRad);
+  return Math.hypot(dLat, dLng);
+}
+
+async function fetchRow(url: string, signal?: AbortSignal): Promise<NominatimRow | null> {
+  try {
+    const res = await fetchWithTimeout(url, signal);
+    if (!res.ok) return null;
+    const row = (await res.json()) as NominatimRow;
+    return row?.display_name ? row : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Best-effort place name for a dropped/dragged pin — falls back to null on any failure. */
 export async function reverseGeocode(
   lat: number,
   lng: number,
   signal?: AbortSignal
 ): Promise<GeocodeResult | null> {
-  try {
-    const url = `${NOMINATIM_BASE}/reverse?format=jsonv2&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`;
-    const res = await fetchWithTimeout(url, signal);
-    if (!res.ok) return null;
-    const row = (await res.json()) as NominatimRow;
-    if (!row || !row.display_name) return null;
-    return toGeocodeResult(row);
-  } catch {
-    return null;
+  const base = `${NOMINATIM_BASE}/reverse?format=jsonv2&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`;
+  const [addressRow, poiRow] = await Promise.all([
+    fetchRow(base, signal),
+    fetchRow(`${base}&layer=poi,railway,natural,manmade`, signal),
+  ]);
+
+  if (poiRow?.name && distanceMeters(lat, lng, Number(poiRow.lat), Number(poiRow.lon)) <= POI_SNAP_RADIUS_M) {
+    return toGeocodeResult(poiRow);
   }
+
+  const row = addressRow ?? poiRow;
+  return row ? toGeocodeResult(row) : null;
 }
 
 /** Forward search for the "search a place" box, biased toward `near` when given. */
