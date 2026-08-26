@@ -9,6 +9,8 @@ import { AddPhotosOnly } from "./routes/AddPhotosOnly";
 import { AddToiletWizard } from "./routes/add/AddToiletWizard";
 import { You } from "./routes/You";
 import { SaveHandle } from "./routes/SaveHandle";
+import { LogIn } from "./routes/LogIn";
+import { ResetPassword } from "./routes/ResetPassword";
 import { Settings } from "./routes/Settings";
 import { AuthCallback } from "./routes/AuthCallback";
 import { AdminDashboard } from "./routes/admin/AdminDashboard";
@@ -31,8 +33,10 @@ export default function App() {
         <Route path="/add" element={<AddToiletWizard />} />
         <Route path="/you" element={<You />} />
         <Route path="/you/save-handle" element={<SaveHandle />} />
+        <Route path="/login" element={<LogIn />} />
         <Route path="/settings" element={<Settings />} />
         <Route path="/auth/callback" element={<AuthCallback />} />
+        <Route path="/auth/reset-password" element={<ResetPassword />} />
         <Route path="/admin" element={<AdminDashboard />} />
       </Routes>
       {showNav && <BottomNav />}

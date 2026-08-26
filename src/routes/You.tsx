@@ -43,6 +43,9 @@ export function You() {
           <button className="btn" style={{ width: "auto", padding: "11px 20px" }} onClick={startAsGuest}>
             Get a handle
           </button>
+          <span style={{ fontSize: 12, color: "var(--chart-4)", cursor: "pointer" }} onClick={() => navigate("/login")}>
+            Already have an account? Log in
+          </span>
         </div>
       </>
     );

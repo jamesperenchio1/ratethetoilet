@@ -159,17 +159,70 @@ export function useAuth() {
     if (error) throw error;
   }, []);
 
-  const isGuest = !!session?.user?.is_anonymous;
+  /** Links an email + password to the current (anonymous) user, keeping the
+   * same id — so the handle and everything posted under it stay attached.
+   * Same email-confirmation step as sendKeepNameLink; the password becomes
+   * usable for signInWithPassword once that confirmation completes. */
+  const linkEmailPassword = useCallback(async (email: string, password: string) => {
+    const { error } = await supabase.auth.updateUser(
+      { email, password },
+      { emailRedirectTo: `${window.location.origin}/auth/callback` }
+    );
+    if (error) throw error;
+  }, []);
+
+  /** Sets/changes the password on the current (already email-linked) user. */
+  const setPassword = useCallback(async (password: string) => {
+    const { error } = await supabase.auth.updateUser({ password });
+    if (error) throw error;
+  }, []);
+
+  /** Signs into an existing email+password account on this device, replacing
+   * whatever session (anonymous or otherwise) was previously active. */
+  const signInWithPassword = useCallback(async (email: string, password: string) => {
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) throw error;
+    setSession(data.session);
+    const p = await loadProfile(data.session.user.id);
+    setProfile(p);
+    return p;
+  }, [loadProfile]);
+
+  /** Sends a password-reset email; the link lands on /auth/reset-password. */
+  const resetPassword = useCallback(async (email: string) => {
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/auth/reset-password`,
+    });
+    if (error) throw error;
+  }, []);
+
+  const signOut = useCallback(async () => {
+    await supabase.auth.signOut();
+    setSession(null);
+    setProfile(null);
+  }, []);
+
+  // No session at all (e.g. before the first ensureSession() call) counts as
+  // a guest too — there's no linked account to log out of or change the
+  // password on either way.
+  const isGuest = !session || !!session.user.is_anonymous;
+  const hasEmail = !isGuest && !!session?.user?.email;
 
   return {
     session,
     profile,
     loading,
     isGuest,
+    hasEmail,
     ensureSession,
     ensureIdentity,
     setHandle,
     sendKeepNameLink,
+    linkEmailPassword,
+    setPassword,
+    signInWithPassword,
+    resetPassword,
+    signOut,
     refreshProfile: () => (session ? loadProfile(session.user.id) : null),
   };
 }
