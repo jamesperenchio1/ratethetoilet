@@ -221,17 +221,15 @@ export function addressFromFlat(flat: {
 }
 
 /** Nominatim's default reverse lookup returns whichever single feature is
- * geometrically nearest, and a long road way often wins over a station's
- * point geometry even a few meters off. Snap to a named transit stop within
- * this radius of the dropped pin instead of the road.
- *
- * Deliberately scoped to the `railway` layer only, not the broader `poi`
- * layer: a shop/mall POI is often mapped as a large polygon, and its nearest
- * edge can read as 0m away even when the pin is actually at an unrelated
- * small shop next door — there's no safe radius that fixes that, so we just
- * don't snap to shops/malls at all and keep the existing road/address
- * fallback for them. */
-const TRANSIT_SNAP_RADIUS_M = 50;
+ * geometrically nearest, and a long road way often wins over a named place's
+ * point geometry (a station, shop, restaurant, landmark…) even a few meters
+ * off. Snap to the nearest named place within this radius of the dropped pin
+ * instead of the road — the same "closest named thing wins" behavior Google
+ * Maps' pin-drop uses. This can occasionally pick a large venue (e.g. a mall)
+ * over a small unrelated shop right next to it, but that's a fair trade: the
+ * pin's own coordinates are never touched by this, and the guessed name is a
+ * plain editable text field on the very next wizard step. */
+const POI_SNAP_RADIUS_M = 50;
 
 function distanceMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const latRad = (lat1 * Math.PI) / 180;
@@ -258,16 +256,16 @@ export async function reverseGeocode(
   signal?: AbortSignal
 ): Promise<GeocodeResult | null> {
   const base = `${NOMINATIM_BASE}/reverse?format=jsonv2&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`;
-  const [addressRow, transitRow] = await Promise.all([
+  const [addressRow, poiRow] = await Promise.all([
     fetchRow(base, signal),
-    fetchRow(`${base}&layer=railway`, signal),
+    fetchRow(`${base}&layer=poi,railway,natural,manmade`, signal),
   ]);
 
-  if (transitRow?.name && distanceMeters(lat, lng, Number(transitRow.lat), Number(transitRow.lon)) <= TRANSIT_SNAP_RADIUS_M) {
-    return toGeocodeResult(transitRow);
+  if (poiRow?.name && distanceMeters(lat, lng, Number(poiRow.lat), Number(poiRow.lon)) <= POI_SNAP_RADIUS_M) {
+    return toGeocodeResult(poiRow);
   }
 
-  const row = addressRow ?? transitRow;
+  const row = addressRow ?? poiRow;
   return row ? toGeocodeResult(row) : null;
 }
 
