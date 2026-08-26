@@ -28,11 +28,15 @@ function SentryTestButton() {
 
 export function Settings() {
   const navigate = useNavigate();
-  const { profile, isGuest, setHandle } = useIdentity();
+  const { profile, isGuest, hasEmail, setHandle, setPassword, signOut } = useIdentity();
   const [renaming, setRenaming] = useState(false);
   const [newHandle, setNewHandle] = useState(profile?.handle ?? "");
   const [error, setError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [changingPassword, setChangingPassword] = useState(false);
+  const [newPassword, setNewPassword] = useState("");
+  const [passwordError, setPasswordError] = useState<string | null>(null);
+  const [passwordSaved, setPasswordSaved] = useState(false);
 
   async function rename() {
     setError(null);
@@ -53,6 +57,27 @@ export function Settings() {
     if (!profile) return;
     await supabase.rpc("self_delete");
     await supabase.auth.signOut();
+    navigate("/");
+  }
+
+  async function changePassword() {
+    setPasswordError(null);
+    if (newPassword.length < 6) {
+      setPasswordError("Password needs to be at least 6 characters.");
+      return;
+    }
+    try {
+      await setPassword(newPassword);
+      setPasswordSaved(true);
+      setChangingPassword(false);
+      setNewPassword("");
+    } catch {
+      setPasswordError("Couldn't change that — try again.");
+    }
+  }
+
+  async function logOut() {
+    await signOut();
     navigate("/");
   }
 
@@ -91,14 +116,67 @@ export function Settings() {
           </div>
         )}
         <div className="box" style={{ flexDirection: "row", justifyContent: "space-between" }}>
-          <span>Backup</span>
+          <span>Account</span>
           <span
             style={{ fontSize: 11, color: isGuest ? "var(--text-muted)" : "var(--chart-4)", cursor: "pointer" }}
             onClick={() => isGuest && navigate("/you/save-handle")}
           >
-            {isGuest ? "Not saved" : "Saved"}
+            {isGuest ? "Not created" : "Created"}
           </span>
         </div>
+
+        {isGuest ? (
+          <div
+            className="box"
+            style={{ flexDirection: "row", justifyContent: "space-between", cursor: "pointer" }}
+            onClick={() => navigate("/login")}
+          >
+            <span>Log in to a different account</span>
+            <span style={{ fontSize: 11, color: "var(--chart-4)" }}>→</span>
+          </div>
+        ) : (
+          <>
+            {changingPassword ? (
+              <div className="box">
+                <input
+                  autoFocus
+                  className="box"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  type="password"
+                  autoComplete="new-password"
+                  placeholder="New password"
+                />
+                {passwordError && <div style={{ fontSize: 11, color: "var(--text-danger)" }}>{passwordError}</div>}
+                <div style={{ display: "flex", gap: 6 }}>
+                  <button className="btn" style={{ flex: 1 }} onClick={changePassword}>
+                    Save
+                  </button>
+                  <button className="btn2" style={{ flex: 1 }} onClick={() => setChangingPassword(false)}>
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div
+                className="box"
+                style={{ flexDirection: "row", justifyContent: "space-between", cursor: "pointer" }}
+                onClick={() => setChangingPassword(true)}
+              >
+                <span>Change password</span>
+                <span style={{ fontSize: 11, color: "var(--chart-4)" }}>{passwordSaved ? "Updated" : "→"}</span>
+              </div>
+            )}
+            <div
+              className="box"
+              style={{ flexDirection: "row", justifyContent: "space-between", cursor: "pointer" }}
+              onClick={logOut}
+            >
+              <span>Log out</span>
+              <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{hasEmail ? profile?.handle : ""}</span>
+            </div>
+          </>
+        )}
 
         <div className="lbl">App</div>
         <div className="box" style={{ flexDirection: "row", justifyContent: "space-between" }}>

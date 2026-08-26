@@ -6,8 +6,9 @@ import { myContributions } from "../lib/api";
 
 export function SaveHandle() {
   const navigate = useNavigate();
-  const { profile, sendKeepNameLink } = useIdentity();
+  const { profile, linkEmailPassword } = useIdentity();
   const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [sent, setSent] = useState(false);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -24,13 +25,17 @@ export function SaveHandle() {
   if (!profile) return null;
 
   async function send() {
+    if (password.length < 6) {
+      setError("Password needs to be at least 6 characters.");
+      return;
+    }
     setSending(true);
     setError(null);
     try {
-      await sendKeepNameLink(email.trim());
+      await linkEmailPassword(email.trim(), password);
       setSent(true);
     } catch {
-      setError("Couldn't send that link — check the address and try again.");
+      setError("Couldn't set that up — check the address and try again.");
     } finally {
       setSending(false);
     }
@@ -51,17 +56,17 @@ export function SaveHandle() {
 
         {sent ? (
           <div className="note">
-            Check your email — tap the link on any phone to sign in as <b>{profile.handle}</b>{" "}
-            there too.
+            Check your email and tap the confirmation link — after that you can log in as{" "}
+            <b>{profile.handle}</b> from any device with this email and password.
           </div>
         ) : (
           <>
             <div style={{ fontSize: 12, lineHeight: 1.45 }}>
-              <b>What this does:</b> leave an address and we can hand this exact name back to you
-              on a new phone. That is all it does.
+              <b>What this does:</b> turns this name into a real account with an email and
+              password, so you can log in and pick up right where you left off on any device.
             </div>
 
-            <div className="lbl">Email or phone</div>
+            <div className="lbl">Email</div>
             <input
               className="box"
               style={{ minHeight: 40 }}
@@ -69,23 +74,33 @@ export function SaveHandle() {
               onChange={(e) => setEmail(e.target.value)}
               placeholder="you@example.com"
               type="email"
+              autoComplete="email"
+            />
+            <div className="lbl">Password</div>
+            <input
+              className="box"
+              style={{ minHeight: 40 }}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              type="password"
+              autoComplete="new-password"
             />
             {error && <div style={{ fontSize: 12, color: "var(--text-danger)" }}>{error}</div>}
-            <button className="btn" disabled={!email.trim() || sending} onClick={send}>
-              Send me the link
+            <button className="btn" disabled={!email.trim() || !password || sending} onClick={send}>
+              Create account
             </button>
             <div style={{ fontSize: 11, lineHeight: 1.45, color: "var(--text-muted)" }}>
-              No password. No profile. We never email you anything else, and your address is
-              never shown next to your posts.
+              Your address is never shown next to your posts, and we never email you anything
+              else.
             </div>
           </>
         )}
 
         <div className="lbl" style={{ marginTop: 4 }}>
-          On a new phone already
+          Already have an account
         </div>
-        <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
-          Open the link from your email on this phone and it'll sign you in automatically.
+        <div style={{ fontSize: 11, color: "var(--chart-4)", cursor: "pointer" }} onClick={() => navigate("/login")}>
+          Log in instead →
         </div>
       </div>
     </>
