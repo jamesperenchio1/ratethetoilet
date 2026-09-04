@@ -483,7 +483,7 @@ export async function fileReport(
   targetId: string,
   reason: string,
   note?: string
-): Promise<Report> {
+): Promise<Report | null> {
   const { data, error } = await supabase
     .from("reports")
     .insert({
@@ -495,7 +495,12 @@ export async function fileReport(
     })
     .select()
     .single();
-  if (error) throw error;
+  if (error) {
+    // Already reported this target from this account — treat as idempotent
+    // rather than an error, since the reporter's intent is already satisfied.
+    if (error.code === "23505") return null;
+    throw error;
+  }
   return data as Report;
 }
 
