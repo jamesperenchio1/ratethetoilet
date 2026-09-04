@@ -3,6 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { TopBar } from "../components/layout/TopBar";
 import { ReportSheet } from "../components/ReportSheet";
 import { getToilet, addReview, photoUrl, deleteOwnToilet, reorderToiletPhotos } from "../lib/api";
+import { isReportedLocally } from "../lib/reportedLocal";
 import { addressFromFlat } from "../lib/geocode";
 import { AddressBlock } from "../components/AddressBlock";
 import { enqueuePost } from "../lib/offlineQueue";
@@ -74,8 +75,8 @@ export function ToiletDetail() {
   if (toilet === undefined) return <div className="screen-body">Loading…</div>;
   if (toilet === null) return <div className="screen-body">Not found.</div>;
 
-  const photos = toilet.photos?.filter((p) => !p.hidden) ?? [];
-  const reviews = toilet.reviews?.filter((r) => !r.hidden) ?? [];
+  const photos = toilet.photos?.filter((p) => !p.hidden && !isReportedLocally("photo", p.id)) ?? [];
+  const reviews = toilet.reviews?.filter((r) => !r.hidden && !isReportedLocally("review", r.id)) ?? [];
 
   async function submitReview() {
     if (!id || !reviewText.trim() || posting) return;
@@ -416,7 +417,7 @@ export function ToiletDetail() {
           </div>
         )}
 
-        {toilet.hint_note && (
+        {toilet.hint_note && !isReportedLocally("hint", toilet.id) && (
           <div className="note">
             <b>HOW TO FIND</b>
             <br />
@@ -505,7 +506,10 @@ export function ToiletDetail() {
           targetId={report.id}
           reporterId={profile?.id ?? null}
           contextLabel={report.label}
-          onClose={() => setReport(null)}
+          onClose={() => {
+            setReport(null);
+            setPhotoIndex(0);
+          }}
         />
       )}
 

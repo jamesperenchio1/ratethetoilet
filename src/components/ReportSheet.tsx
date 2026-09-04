@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Sheet } from "./layout/Sheet";
 import { fileReport } from "../lib/api";
 import { CONFIG } from "../lib/config";
+import { markReportedLocally } from "../lib/reportedLocal";
 import type { ReportTargetType } from "../lib/types";
 
 const PHOTO_REASONS = CONFIG.report.photoReasons;
@@ -29,7 +30,8 @@ export function ReportSheet({
     setSending(true);
     try {
       const report = await fileReport(reporterId, targetType, targetId, reason);
-      setReportId(report.id);
+      markReportedLocally(targetType, targetId);
+      setReportId(report?.id ?? null);
       setSent(true);
     } finally {
       setSending(false);
@@ -41,12 +43,12 @@ export function ReportSheet({
       <Sheet onDismiss={onClose}>
         <b style={{ fontSize: 15 }}>Thanks — it's queued</b>
         <div style={{ fontSize: 12, lineHeight: 1.45, color: "var(--text-secondary)" }}>
-          Hidden from everyone until a moderator looks, usually within a day.
+          Hidden from your view now. If a couple more people report it, it's hidden for
+          everyone while a moderator takes a look.
         </div>
         {reportId && (
           <div className="box dashed" style={{ fontSize: 11 }}>
-            Report #<span className="num">{reportId.slice(0, 8)}</span> — we'll show the
-            outcome here if you keep this phone
+            Report #<span className="num">{reportId.slice(0, 8)}</span>
           </div>
         )}
         <button className="ghost" onClick={onClose}>
