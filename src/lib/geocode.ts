@@ -426,7 +426,14 @@ async function searchPlacesGoogle(
     clearTimeout(timer);
     if (!response.ok) return [];
     const data = (await response.json()) as { places?: GooglePlace[] };
-    return (data.places ?? []).map(toGoogleResult).filter((r): r is GeocodeResult => r !== null);
+    // Google's `locationBias`/`regionCode` are soft biases only: an ambiguous
+    // query (e.g. "cgil") can still return results from another country. Hard-
+    // drop any result whose country isn't Thailand so search never drifts abroad.
+    const THAILAND = "Thailand";
+    return (data.places ?? [])
+      .map(toGoogleResult)
+      .filter((r): r is GeocodeResult => r !== null)
+      .filter((r) => r.address?.country === THAILAND);
   } catch {
     return [];
   }
