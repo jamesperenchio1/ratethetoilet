@@ -132,6 +132,8 @@ export const CONFIG = {
     geocodeSearchLimit: 6,
     /** Photon (photon.komoot.io) keyless OSM geocoder base URL. */
     geocodeBaseUrl: "https://photon.komoot.io",
+    /** Google Places API (New) Text Search endpoint. */
+    geocodeGoogleBaseUrl: "https://places.googleapis.com/v1/places:searchText",
     /** Thailand bounding box [minLon, minLat, maxLon, maxLat] — a HARD filter so
      * "root bar" returns Bangkok venues instead of higher-traffic US ones. */
     geocodeCountryBbox: [97.34, 5.61, 105.64, 20.46],

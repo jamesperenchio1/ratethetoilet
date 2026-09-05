@@ -1,9 +1,10 @@
-// Free, keyless geocoding backed by Photon (photon.komoot.io) over OpenStreetMap
-// data — no Google Places key required. Same open-data stack as the OpenFreeMap
-// map tiles already used in MapView. Searches are hard-filtered to a Thailand
-// bounding box so a query like "root bar" returns Bangkok venues instead of
-// higher-traffic US ones. Photon's usage policy caps this at ~1 request/second,
-// so callers are expected to debounce.
+// Geocoding: Google Places API (New) Text Search when a key is configured,
+// otherwise keyless Photon (photon.komoot.io) over OpenStreetMap data. Photon
+// only indexes OSM, so venues that exist on Google Maps but aren't mapped in OSM
+// (e.g. "Root Bar" at 1130 Phahonyothin) only show up when the Google key is set.
+// Both paths are hard-filtered to a Thailand bounding box so a query like
+// "root bar" returns Bangkok venues instead of higher-traffic US ones. Photon's
+// usage policy caps it at ~1 request/second, so callers are expected to debounce.
 import { CONFIG } from "./config";
 
 const PHOTON_BASE = CONFIG.api.geocodeBaseUrl;
@@ -284,14 +285,19 @@ export async function reverseGeocode(
   return feature ? toPhotonResult(feature) : null;
 }
 
-/** Forward search for the "search a place" box, hard-filtered to Thailand and
- * biased toward `near` (the user's location) when given. */
+/** Forward search for the "search a place" box. Uses the Google Places API when
+ * a key is configured (returns Google's POIs, e.g. venues missing from OSM),
+ * otherwise falls back to Photon. Both are hard-filtered to Thailand and biased
+ * toward `near` (the user's location) when given. */
 export async function searchPlaces(
   query: string,
   opts: { near?: { lat: number; lng: number }; signal?: AbortSignal } = {}
 ): Promise<GeocodeResult[]> {
   const q = query.trim();
   if (q.length < 2) return [];
+  if (GOOGLE_KEY) {
+    return searchPlacesGoogle(q, opts);
+  }
   const [minLon, minLat, maxLon, maxLat] = CONFIG.api.geocodeCountryBbox;
   const params = new URLSearchParams({
     q,
@@ -316,3 +322,112 @@ export async function searchPlaces(
 // Re-exported so UI code that only imports from geocode can use these keys for
 // building flat address columns.
 export { VALID_ADDRESS_KEYS };
+
+/** The env var name holding the Google Places API (New) key. Kept in one place
+ * so the key is only ever read from the environment. */
+const GOOGLE_KEY = import.meta.env.VITE_GOOGLE_PLACES_API_KEY as string | undefined;
+
+interface GoogleAddressComponent {
+  longText?: string;
+  shortText?: string;
+  types?: string[];
+}
+
+/** Minimal shape of a place from the Google Places API (New) `places:searchText`
+ * response, limited to the fields we request via X-Goog-FieldMask. */
+interface GooglePlace {
+  id?: string;
+  displayName?: { text?: string };
+  formattedAddress?: string;
+  location?: { latitude: number; longitude: number };
+  addressComponents?: GoogleAddressComponent[];
+}
+
+/** Map a Google address component (by its type) onto our normalized address. */
+function componentByType(components: GoogleAddressComponent[], type: string): string | undefined {
+  return components.find((c) => c.types?.includes(type))?.longText ?? undefined;
+}
+
+/** Build our structured Address from Google's addressComponents. */
+function addressFromGoogle(place: GooglePlace): Address | undefined {
+  const c = place.addressComponents;
+  if (!c) return undefined;
+  const addr: Address = {
+    road: componentByType(c, "route"),
+    house_number: componentByType(c, "street_number"),
+    suburb: componentByType(c, "sublocality_level_2") ?? componentByType(c, "sublocality"),
+    city_district: componentByType(c, "sublocality_level_1"),
+    city: componentByType(c, "locality"),
+    state: componentByType(c, "administrative_area_level_1"),
+    postcode: componentByType(c, "postal_code"),
+    country: componentByType(c, "country"),
+  };
+  return Object.values(addr).some(Boolean) ? addr : undefined;
+}
+
+/** Map a Google Place onto our normalized result, matching the Photon shape. */
+function toGoogleResult(place: GooglePlace): GeocodeResult | null {
+  const location = place.location;
+  if (!location || typeof location.latitude !== "number" || typeof location.longitude !== "number") return null;
+  const name = place.displayName?.text ?? "";
+  const displayName = place.formattedAddress ?? name;
+  return {
+    id: place.id ?? "",
+    name,
+    displayName,
+    lat: location.latitude,
+    lng: location.longitude,
+    address: addressFromGoogle(place),
+  };
+}
+
+/** Forward search via the Google Places API (New) Text Search. Biased to the
+ * Thailand rectangle and toward `near` when given. */
+async function searchPlacesGoogle(
+  query: string,
+  opts: { near?: { lat: number; lng: number }; signal?: AbortSignal } = {}
+): Promise<GeocodeResult[]> {
+  const [minLon, minLat, maxLon, maxLat] = CONFIG.api.geocodeCountryBbox;
+  const body: Record<string, unknown> = {
+    textQuery: query,
+    // Hard-filter to Thailand (matches the Photon bbox) so US venues don't win.
+    locationBias: {
+      rectangle: {
+        low: { latitude: minLat, longitude: minLon },
+        high: { latitude: maxLat, longitude: maxLon },
+      },
+    },
+    maxResultCount: CONFIG.api.geocodeSearchLimit,
+  };
+  if (opts.near) {
+    // A nearby point centers the rectangle bias (Google uses it to rank closer places first).
+    body.locationBias = {
+      rectangle: {
+        low: { latitude: Math.max(minLat, opts.near.lat - 0.1), longitude: Math.max(minLon, opts.near.lng - 0.1) },
+        high: { latitude: Math.min(maxLat, opts.near.lat + 0.1), longitude: Math.min(maxLon, opts.near.lng + 0.1) },
+      },
+    };
+  }
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+    opts.signal?.addEventListener("abort", () => controller.abort(), { once: true });
+    const response = await fetch(CONFIG.api.geocodeGoogleBaseUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Goog-Api-Key": GOOGLE_KEY ?? "",
+        "X-Goog-FieldMask":
+          "places.id,places.displayName,places.formattedAddress,places.location,places.addressComponents",
+      },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+    if (!response.ok) return [];
+    const data = (await response.json()) as { places?: GooglePlace[] };
+    return (data.places ?? []).map(toGoogleResult).filter((r): r is GeocodeResult => r !== null);
+  } catch {
+    return [];
+  }
+}

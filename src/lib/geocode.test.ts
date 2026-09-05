@@ -104,21 +104,28 @@ describe("reverseGeocode", () => {
     vi.unstubAllGlobals();
   });
 
+  function feature(props: Record<string, unknown>, lat: number, lon: number): object {
+    return {
+      geometry: { coordinates: [lon, lat] },
+      properties: props,
+    };
+  }
+
   function stubFetch(byLayer: { address: object; poi: object | null }) {
     vi.stubGlobal(
       "fetch",
       vi.fn((url: string) => {
         const body = url.includes("layer=") ? byLayer.poi : byLayer.address;
         if (!body) return Promise.resolve({ ok: false, json: async () => ({}) });
-        return Promise.resolve({ ok: true, json: async () => body });
+        return Promise.resolve({ ok: true, json: async () => ({ features: [body] }) });
       })
     );
   }
 
   it("snaps to a named transit stop a few meters from the pin instead of the road it sits on", async () => {
     stubFetch({
-      address: { place_id: 1, display_name: "Phahon Yothin Road, Bangkok", lat: "13.9249", lon: "100.6258" },
-      poi: { place_id: 2, display_name: "แยก คปอ., Bangkok", name: "แยก คปอ.", lat: "13.9250126", lon: "100.6258374" },
+      address: feature({ street: "Phahon Yothin Road", city: "Bangkok" }, 13.9249, 100.6258),
+      poi: feature({ name: "แยก คปอ." }, 13.9250126, 100.6258374),
     });
     const result = await reverseGeocode(13.9249, 100.6258);
     expect(result?.name).toBe("แยก คปอ.");
@@ -126,8 +133,8 @@ describe("reverseGeocode", () => {
 
   it("snaps to a nearby named shop/venue too, not just transit", async () => {
     stubFetch({
-      address: { place_id: 1, display_name: "Sukhumvit Soi 11, Bangkok", lat: "13.7398", lon: "100.5561" },
-      poi: { place_id: 4, display_name: "Cheap Charlie's, Bangkok", name: "Cheap Charlie's", lat: "13.73985", lon: "100.55615" },
+      address: feature({ street: "Sukhumvit Soi 11", city: "Bangkok" }, 13.7398, 100.5561),
+      poi: feature({ name: "Cheap Charlie's" }, 13.73985, 100.55615),
     });
     const result = await reverseGeocode(13.7398, 100.5561);
     expect(result?.name).toBe("Cheap Charlie's");
@@ -135,8 +142,8 @@ describe("reverseGeocode", () => {
 
   it("falls back to the road when the nearest named place is far from the pin", async () => {
     stubFetch({
-      address: { place_id: 1, display_name: "Phahon Yothin Road, Bangkok", lat: "13.9249", lon: "100.6258" },
-      poi: { place_id: 3, display_name: "Some Distant Place", name: "Some Distant Place", lat: "13.93", lon: "100.63" },
+      address: feature({ street: "Phahon Yothin Road", city: "Bangkok" }, 13.9249, 100.6258),
+      poi: feature({ name: "Some Distant Place" }, 13.93, 100.63),
     });
     const result = await reverseGeocode(13.9249, 100.6258);
     expect(result?.displayName).toBe("Phahon Yothin Road, Bangkok");
