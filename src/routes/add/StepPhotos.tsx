@@ -109,8 +109,44 @@ export function StepPhotos({
   const [loadingEdit, setLoadingEdit] = useState<string | null>(null);
   const [dragLocalId, setDragLocalId] = useState<string | null>(null);
   const [overIndex, setOverIndex] = useState<number | null>(null);
+  const [dragOver, setDragOver] = useState(false);
   const dragStart = useRef<{ x: number; y: number; id: string } | null>(null);
   const dragged = useRef(false);
+
+  function onDropZoneDragOver(e: React.DragEvent) {
+    e.preventDefault();
+    setDragOver(true);
+  }
+
+  function onDropZoneDragLeave() {
+    setDragOver(false);
+  }
+
+  function onDropZoneDrop(e: React.DragEvent) {
+    e.preventDefault();
+    setDragOver(false);
+    addFiles(e.dataTransfer.files);
+  }
+
+  // PC-native QoL: allow pasting an image (Ctrl/Cmd+V) straight from the clipboard.
+  const addFilesRef = useRef(addFiles);
+  addFilesRef.current = addFiles;
+  useEffect(() => {
+    function onPaste(e: ClipboardEvent) {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      const files: File[] = [];
+      for (const item of items) {
+        if (item.type.startsWith("image/")) {
+          const f = item.getAsFile();
+          if (f) files.push(f);
+        }
+      }
+      if (files.length > 0) addFilesRef.current(files as unknown as FileList);
+    }
+    window.addEventListener("paste", onPaste);
+    return () => window.removeEventListener("paste", onPaste);
+  }, []);
 
   function onThumbPointerDown(localId: string) {
     return (e: React.PointerEvent) => {
@@ -290,8 +326,21 @@ export function StepPhotos({
       />
 
       {entry.photos.length === 0 ? (
-        <div className="box dashed" style={{ flex: 1, alignItems: "center", justifyContent: "center", minHeight: 160 }}>
-          No photos yet
+        <div
+          className="box dashed"
+          style={{
+            flex: 1,
+            alignItems: "center",
+            justifyContent: "center",
+            minHeight: 160,
+            gap: 4,
+            borderColor: dragOver ? "var(--surface-accent)" : undefined,
+          }}
+          onDragOver={onDropZoneDragOver}
+          onDragLeave={onDropZoneDragLeave}
+          onDrop={onDropZoneDrop}
+        >
+          {dragOver ? "Drop to add" : "No photos yet — drop or tap to add"}
         </div>
       ) : (
         <div className="box" style={{ flex: 1, alignItems: "center", justifyContent: "center", minHeight: 160 }}>
@@ -304,8 +353,12 @@ export function StepPhotos({
           ◉ Take a photo
         </button>
         <button className="btn2" style={{ flex: 1 }} onClick={() => uploadRef.current?.click()}>
-          ▣ Upload from phone
+          ▣ Upload
         </button>
+      </div>
+
+      <div style={{ fontSize: 11, color: "var(--text-muted)", textAlign: "center" }}>
+        Drag &amp; drop, or paste (Ctrl/Cmd+V) images from your computer
       </div>
 
       {entry.photos.length > 0 && (
@@ -316,9 +369,13 @@ export function StepPhotos({
               Drag photos to reorder — the first one shows first.
             </div>
           )}
-          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-            {entry.photos.map((p, i) => (
-              <div
+          <div
+            style={{ display: "flex", gap: 6, flexWrap: "wrap" }}
+            onDragOver={onDropZoneDragOver}
+            onDragLeave={onDropZoneDragLeave}
+            onDrop={onDropZoneDrop}
+          >
+            {entry.photos.map((p, i) => (              <div
                 key={p.localId}
                 data-photo-id={i}
                 style={{

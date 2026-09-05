@@ -129,11 +129,14 @@ export const CONFIG = {
     allToiletsLimit: 3000,
     /** Posts (toilets + reviews combined) per rolling hour. SQL mirror above. */
     postRateLimitPerHour: 10,
-    /** Nominatim geocoding fetch timeout (ms). */
+    /** Photon geocoding fetch timeout (ms). */
     geocodeTimeoutMs: 6000,
     geocodeSearchLimit: 6,
-    /** Nominatim soft-bias box half-width in degrees (~35 km). */
-    geocodeBiasBox: 0.35,
+    /** Photon (photon.komoot.io) keyless OSM geocoder base URL. */
+    geocodeBaseUrl: "https://photon.komoot.io",
+    /** Thailand bounding box [minLon, minLat, maxLon, maxLat] — a HARD filter so
+     * "root bar" returns Bangkok venues instead of higher-traffic US ones. */
+    geocodeCountryBbox: [97.34, 5.61, 105.64, 20.46],
   },
 
   venue: {

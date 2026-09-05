@@ -38,7 +38,7 @@ export interface Toilet {
   location_source?: "gps" | "search" | "manual" | null;
   floor?: string | null;
   venue_id?: string | null;
-  /** Google-Maps-style structured address, flattened from Nominatim. */
+  /** Google-Maps-style structured address, flattened from geocoding. */
   address_road?: string | null;
   address_house_number?: string | null;
   address_suburb?: string | null;
