@@ -74,6 +74,11 @@ function reencodedName(file: File): string {
   return file.name.replace(/\.[^.]+$/, "") + ".jpg";
 }
 
+/** Detect HEIC/HEIF by MIME type or extension. */
+function isHeic(file: File): boolean {
+  return /heic|heif/i.test(file.type) || /\.heic$/i.test(file.name);
+}
+
 export async function compressImage(file: File): Promise<CompressResult> {
   if (file.size > MAX_INPUT_BYTES) {
     throw new ImageTooLargeError();
@@ -113,6 +118,27 @@ export async function compressImage(file: File): Promise<CompressResult> {
         img.naturalWidth * scale,
         img.naturalHeight * scale
       );
+    }
+
+    // Path 3: HEIC/HEIF via heic2any — desktop Chrome can't decode HEIC in
+    // createImageBitmap or an <img>, so convert it explicitly to JPEG first.
+    // Loaded lazily so it never runs in node (it touches `window` at import).
+    if (!blob && isHeic(file)) {
+      const { default: heic2any } = await import("heic2any");
+      const converted = await heic2any({ blob: file, toType: "image/jpeg", quality: JPEG_QUALITY });
+      const single = Array.isArray(converted) ? converted[0] : converted;
+      if (single instanceof Blob) {
+        const img = await loadImage(new File([single], "heic.jpg", { type: "image/jpeg" }));
+        const scale = Math.min(
+          1,
+          MAX_DIMENSION / Math.max(img.naturalWidth, img.naturalHeight)
+        );
+        blob = await drawToBlob(
+          img,
+          img.naturalWidth * scale,
+          img.naturalHeight * scale
+        );
+      }
     }
 
     if (blob && (blob.size < file.size || file.size > ALWAYS_REENCODE_BYTES)) {

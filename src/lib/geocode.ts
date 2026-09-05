@@ -1,13 +1,15 @@
-// Free, keyless geocoding backed by OpenStreetMap Nominatim — no Google Places
-// key required. Same open-data stack as the OpenFreeMap map tiles already used
-// in MapView. Nominatim's usage policy caps this at ~1 request/second and asks
-// for reasonable client-side debouncing, which callers are expected to do.
+// Free, keyless geocoding backed by Photon (photon.komoot.io) over OpenStreetMap
+// data — no Google Places key required. Same open-data stack as the OpenFreeMap
+// map tiles already used in MapView. Searches are hard-filtered to a Thailand
+// bounding box so a query like "root bar" returns Bangkok venues instead of
+// higher-traffic US ones. Photon's usage policy caps this at ~1 request/second,
+// so callers are expected to debounce.
 import { CONFIG } from "./config";
 
-const NOMINATIM_BASE = "https://nominatim.openstreetmap.org";
+const PHOTON_BASE = CONFIG.api.geocodeBaseUrl;
 
-/** Structured address returned by Nominatim's `addressdetails=1`, kept so we
- * can render a Google-Maps-style multi-line address instead of just a name. */
+/** Structured address returned by Photon's `properties`, kept so we can render
+ * a Google-Maps-style multi-line address instead of just a name. */
 export interface Address {
   road?: string;
   house_number?: string;
@@ -33,13 +35,24 @@ export interface GeocodeResult {
   address?: Address;
 }
 
-interface NominatimRow {
-  place_id: number;
-  display_name: string;
-  lat: string;
-  lon: string;
+/** Photon returns a GeoJSON FeatureCollection. Only the fields we use are typed. */
+interface PhotonProperties {
+  osm_id?: number;
+  osm_type?: string;
   name?: string;
-  address?: Record<string, string>;
+  street?: string;
+  housenumber?: string;
+  locality?: string;
+  district?: string;
+  city?: string;
+  postcode?: string;
+  state?: string;
+  country?: string;
+}
+
+interface PhotonFeature {
+  geometry?: { coordinates?: [number, number] };
+  properties?: PhotonProperties;
 }
 
 const TIMEOUT_MS = CONFIG.api.geocodeTimeoutMs;
@@ -54,77 +67,76 @@ function fetchWithTimeout(url: string, externalSignal?: AbortSignal): Promise<Re
   );
 }
 
-/**
- * A named POI (row.name, or an amenity/shop/building tag) is already specific
- * to one building — use it as-is. Otherwise Nominatim falls back to the road
- * or village name, which is shared by every house on that street: without a
- * house number, two different houses a few doors apart end up with the exact
- * same suggested name. Prefix with the house number whenever OSM has one.
- */
-function primaryName(row: NominatimRow): string {
-  if (row.name) return row.name;
-  const a = row.address;
-  if (a?.amenity) return a.amenity;
-  if (a?.shop) return a.shop;
-  if (a?.building) return a.building;
+/** Photon has no single display_name, so assemble one from its component fields. */
+function buildDisplayName(p: PhotonProperties): string {
+  const parts = [
+    p.street && p.housenumber ? `${p.housenumber} ${p.street}` : p.street,
+    p.locality,
+    p.district,
+    p.city,
+    p.state,
+    p.postcode,
+    p.country,
+  ].filter(Boolean);
+  return parts.join(", ");
+}
 
-  const street = a?.road || a?.pedestrian || a?.footway;
-  const area = street || a?.village || a?.neighbourhood || a?.suburb;
-  if (a?.house_number && area) return `${a.house_number} ${area}`;
-  return area || row.display_name.split(",")[0].trim();
+/** The most specific available label for a place: name, then street+number, then street, then the assembled display name. */
+function primaryName(p: PhotonProperties): string {
+  if (p.name) return p.name;
+  if (p.street && p.housenumber) return `${p.housenumber} ${p.street}`;
+  if (p.street) return p.street;
+  return buildDisplayName(p);
 }
 
 /**
- * Locality context (district, then city) to trail the primary name with —
- * a bare "Wat Pho" or "Soi 5" reads as plain and is ambiguous across a city
- * the size of Bangkok, so pair it with the neighborhood/district and city
- * whenever OSM has them and they're not already the primary name itself.
+ * Locality context (district, then city) to trail the primary name with — a
+ * bare "Wat Pho" or "Soi 5" reads as plain and is ambiguous across a city the
+ * size of Bangkok, so pair it with the neighborhood/district and city whenever
+ * OSM has them and they're not already the primary name itself.
  */
-function localityContext(row: NominatimRow, primary: string): string[] {
-  const a = row.address;
-  if (!a) return [];
-  const district = a.suburb || a.neighbourhood || a.city_district;
-  const city = a.city || a.town || a.village;
-  const parts = [district, city].filter((p): p is string => !!p && p !== primary);
+function localityContext(p: PhotonProperties, primary: string): string[] {
+  const district = p.locality || p.district;
+  const city = p.city;
+  const parts = [district, city].filter((v): v is string => !!v && v !== primary);
   return [...new Set(parts)];
 }
 
 /** A verbose, disambiguated place name: primary spot plus district/city context. */
-function fullName(row: NominatimRow): string {
-  const primary = primaryName(row);
-  const context = localityContext(row, primary);
+function fullName(p: PhotonProperties): string {
+  const primary = primaryName(p);
+  const context = localityContext(p, primary);
   return context.length ? `${primary}, ${context.join(", ")}` : primary;
 }
 
-/** Strip the noise keys we don't persist, keeping a clean structured address. */
-function toAddress(raw?: Record<string, string>): Address | undefined {
-  if (!raw) return undefined;
+/** Map Photon properties onto our normalized structured address. */
+function toAddress(p: PhotonProperties): Address | undefined {
+  if (!p || (!p.street && !p.housenumber && !p.locality && !p.district && !p.city && !p.postcode && !p.country)) {
+    return undefined;
+  }
   return {
-    road: raw.road,
-    house_number: raw.house_number,
-    neighbourhood: raw.neighbourhood,
-    suburb: raw.suburb,
-    city_district: raw.city_district,
-    city: raw.city,
-    state: raw.state,
-    postcode: raw.postcode,
-    country: raw.country,
-    amenity: raw.amenity,
-    shop: raw.shop,
-    building: raw.building,
-    village: raw.village,
+    road: p.street,
+    house_number: p.housenumber,
+    suburb: p.locality || p.district,
+    city: p.city,
+    state: p.state,
+    postcode: p.postcode,
+    country: p.country,
   };
 }
 
-/** Shared mapping from a raw Nominatim row to our normalized result. */
-function toGeocodeResult(row: NominatimRow): GeocodeResult {
+/** Shared mapping from a Photon feature to our normalized result. */
+function toPhotonResult(feature: PhotonFeature): GeocodeResult | null {
+  const p = feature.properties;
+  if (!p || !feature.geometry?.coordinates) return null;
+  const [lng, lat] = feature.geometry.coordinates;
   return {
-    id: String(row.place_id),
-    name: fullName(row),
-    displayName: row.display_name,
-    lat: Number(row.lat),
-    lng: Number(row.lon),
-    address: toAddress(row.address),
+    id: `${p.osm_type ?? "osm"}:${p.osm_id ?? ""}`,
+    name: fullName(p),
+    displayName: buildDisplayName(p),
+    lat,
+    lng,
+    address: toAddress(p),
   };
 }
 
@@ -220,15 +232,17 @@ export function addressFromFlat(flat: {
   return addr;
 }
 
-/** Nominatim's default reverse lookup returns whichever single feature is
- * geometrically nearest, and a long road way often wins over a named place's
- * point geometry (a station, shop, restaurant, landmark…) even a few meters
- * off. Snap to the nearest named place within this radius of the dropped pin
- * instead of the road — the same "closest named thing wins" behavior Google
- * Maps' pin-drop uses. This can occasionally pick a large venue (e.g. a mall)
- * over a small unrelated shop right next to it, but that's a fair trade: the
- * pin's own coordinates are never touched by this, and the guessed name is a
- * plain editable text field on the very next wizard step. */
+/**
+ * Photon's reverse lookup returns whichever single feature is geometrically
+ * nearest, and a long road way often wins over a named place's point geometry
+ * (a station, shop, restaurant, landmark…) even a few meters off. Snap to the
+ * nearest named place within this radius of the dropped pin instead of the road
+ * — the same "closest named thing wins" behavior Google Maps' pin-drop uses.
+ * This can occasionally pick a large venue (e.g. a mall) over a small unrelated
+ * shop right next to it, but that's a fair trade: the pin's own coordinates are
+ * never touched by this, and the guessed name is a plain editable text field on
+ * the very next wizard step.
+ */
 const POI_SNAP_RADIUS_M = 50;
 
 function distanceMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {
@@ -238,12 +252,12 @@ function distanceMeters(lat1: number, lng1: number, lat2: number, lng2: number):
   return Math.hypot(dLat, dLng);
 }
 
-async function fetchRow(url: string, signal?: AbortSignal): Promise<NominatimRow | null> {
+async function fetchFeature(url: string, signal?: AbortSignal): Promise<PhotonFeature | null> {
   try {
     const res = await fetchWithTimeout(url, signal);
     if (!res.ok) return null;
-    const row = (await res.json()) as NominatimRow;
-    return row?.display_name ? row : null;
+    const data = (await res.json()) as { features?: PhotonFeature[] };
+    return data.features?.[0] ?? null;
   } catch {
     return null;
   }
@@ -255,44 +269,45 @@ export async function reverseGeocode(
   lng: number,
   signal?: AbortSignal
 ): Promise<GeocodeResult | null> {
-  const base = `${NOMINATIM_BASE}/reverse?format=jsonv2&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`;
-  const [addressRow, poiRow] = await Promise.all([
-    fetchRow(base, signal),
-    fetchRow(`${base}&layer=poi,railway,natural,manmade`, signal),
+  const base = `${PHOTON_BASE}/reverse?lon=${lng}&lat=${lat}`;
+  const [addressFeature, poiFeature] = await Promise.all([
+    fetchFeature(base, signal),
+    fetchFeature(`${base}&layer=poi,railway,natural,manmade`, signal),
   ]);
 
-  if (poiRow?.name && distanceMeters(lat, lng, Number(poiRow.lat), Number(poiRow.lon)) <= POI_SNAP_RADIUS_M) {
-    return toGeocodeResult(poiRow);
+  const poiCoords = poiFeature?.geometry?.coordinates;
+  if (poiFeature?.properties?.name && poiCoords && distanceMeters(lat, lng, poiCoords[1], poiCoords[0]) <= POI_SNAP_RADIUS_M) {
+    return toPhotonResult(poiFeature);
   }
 
-  const row = addressRow ?? poiRow;
-  return row ? toGeocodeResult(row) : null;
+  const feature = addressFeature ?? poiFeature;
+  return feature ? toPhotonResult(feature) : null;
 }
 
-/** Forward search for the "search a place" box, biased toward `near` when given. */
+/** Forward search for the "search a place" box, hard-filtered to Thailand and
+ * biased toward `near` (the user's location) when given. */
 export async function searchPlaces(
   query: string,
   opts: { near?: { lat: number; lng: number }; signal?: AbortSignal } = {}
 ): Promise<GeocodeResult[]> {
   const q = query.trim();
   if (q.length < 2) return [];
+  const [minLon, minLat, maxLon, maxLat] = CONFIG.api.geocodeCountryBbox;
   const params = new URLSearchParams({
-    format: "jsonv2",
     q,
-    addressdetails: "1",
     limit: String(CONFIG.api.geocodeSearchLimit),
+    bbox: `${minLon},${minLat},${maxLon},${maxLat}`,
   });
   if (opts.near) {
     const { lat, lng } = opts.near;
-    const d = CONFIG.api.geocodeBiasBox; // ~35km soft bias box
-    params.set("viewbox", `${lng - d},${lat + d},${lng + d},${lat - d}`);
-    params.set("bounded", "0");
+    params.set("lat", String(lat));
+    params.set("lon", String(lng));
   }
   try {
-    const res = await fetchWithTimeout(`${NOMINATIM_BASE}/search?${params.toString()}`, opts.signal);
+    const res = await fetchWithTimeout(`${PHOTON_BASE}/api/?${params.toString()}`, opts.signal);
     if (!res.ok) return [];
-    const rows = (await res.json()) as NominatimRow[];
-    return rows.map(toGeocodeResult);
+    const data = (await res.json()) as { features?: PhotonFeature[] };
+    return (data.features ?? []).map(toPhotonResult).filter((r): r is GeocodeResult => r !== null);
   } catch {
     return [];
   }

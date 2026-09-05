@@ -61,7 +61,7 @@ export interface ToiletDraft {
   venueName: string | null;
   /** Resolved venue id (null = create a new venue on submit). */
   venueId: string | null;
-  /** Structured address resolved from Nominatim, shown and persisted. */
+  /** Structured address resolved from geocoding, shown and persisted. */
   address: Address | null;
   accessTypes: string[];
   supplies: string[];
