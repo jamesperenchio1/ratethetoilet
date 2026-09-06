@@ -21,6 +21,7 @@ export function StepVenue({
 }) {
   const [catalog, setCatalog] = useState<VenueTypeDef[]>([]);
   const [customFloor, setCustomFloor] = useState("");
+  const [customFloorOpen, setCustomFloorOpen] = useState(false);
   const [customPrimaryFloor, setCustomPrimaryFloor] = useState("");
   const [venueMatches, setVenueMatches] = useState<Venue[]>([]);
   const [searchingVenue, setSearchingVenue] = useState(false);
@@ -29,6 +30,9 @@ export function StepVenue({
   const [customTypeOpen, setCustomTypeOpen] = useState(false);
   const [customTypeValue, setCustomTypeValue] = useState("");
   const [addingCustom, setAddingCustom] = useState(false);
+
+  const [venueTypeQuery, setVenueTypeQuery] = useState("");
+  const [customSupply, setCustomSupply] = useState("");
 
   useEffect(() => {
     listVenueTypes()
@@ -92,6 +96,15 @@ export function StepVenue({
         ? prev.supplies.filter((x) => x !== s)
         : [...prev.supplies, s],
     }));
+  }
+
+  function addCustomSupply() {
+    const s = customSupply.trim();
+    if (!s) return;
+    onChange((prev) =>
+      prev.supplies.includes(s) ? prev : { ...prev, supplies: [...prev.supplies, s] }
+    );
+    setCustomSupply("");
   }
 
   async function addCustomType() {
@@ -191,20 +204,50 @@ export function StepVenue({
       )}
 
       <div className="lbl">Venue</div>
+      <input
+        className="box"
+        style={{ flex: "none" }}
+        value={venueTypeQuery}
+        onChange={(e) => setVenueTypeQuery(e.target.value)}
+        placeholder="Search types (e.g. mall, beach)…"
+      />
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-        {catalog.map((v) => (
-          <span
-            key={v.key}
-            className={`chip ${draft.venueTypes.includes(v.key) ? "on" : ""}`}
-            onClick={() => toggleVenueType(v.key)}
-          >
-            {v.label}
-          </span>
-        ))}
+        {catalog
+          .filter((v) => {
+            if (!venueTypeQuery.trim()) return true;
+            const q = venueTypeQuery.trim().toLowerCase();
+            return v.label.toLowerCase().includes(q) || v.key.toLowerCase().includes(q);
+          })
+          .map((v) => (
+            <span
+              key={v.key}
+              className={`chip ${draft.venueTypes.includes(v.key) ? "on" : ""}`}
+              onClick={() => toggleVenueType(v.key)}
+            >
+              {v.label}
+            </span>
+          ))}
         <span className={`chip ${customTypeOpen ? "on" : ""}`} onClick={() => setCustomTypeOpen((o) => !o)}>
-          + Other
+          + Add
         </span>
       </div>
+      {venueTypeQuery.trim() &&
+        !catalog.some(
+          (v) => v.label.toLowerCase() === venueTypeQuery.trim().toLowerCase() || v.key === venueTypeQuery.trim().toLowerCase()
+        ) && (
+          <button
+            className="btn2"
+            style={{ textAlign: "left" }}
+            onClick={async () => {
+              const label = venueTypeQuery.trim();
+              setVenueTypeQuery("");
+              setCustomTypeValue(label);
+              await addCustomType();
+            }}
+          >
+            + Add new type “{venueTypeQuery.trim()}”
+          </button>
+        )}
       {customTypeOpen && (
         <div style={{ display: "flex", gap: 6 }}>
           <input
@@ -251,19 +294,74 @@ export function StepVenue({
             {s}
           </span>
         ))}
+        {draft.supplies
+          .filter((s) => !SUPPLIES.includes(s))
+          .map((s) => (
+            <span
+              key={s}
+              className={`chip ${draft.supplies.includes(s) ? "on" : ""}`}
+              onClick={() => toggleSupply(s)}
+            >
+              {s}
+            </span>
+          ))}
+      </div>
+      <div style={{ display: "flex", gap: 6 }}>
+        <input
+          className="box"
+          style={{ flex: 1 }}
+          value={customSupply}
+          onChange={(e) => setCustomSupply(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && addCustomSupply()}
+          placeholder="Add a supply, e.g. Soap, Dryer…"
+        />
+        <button
+          className="btn2"
+          style={{ width: "auto", padding: "8px 12px" }}
+          disabled={!customSupply.trim()}
+          onClick={addCustomSupply}
+        >
+          Add
+        </button>
       </div>
 
-      <div
-        className="lbl"
-        style={{ cursor: "pointer" }}
+      <button
+        type="button"
+        className="btn2"
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 8,
+          textAlign: "left",
+          borderColor: draft.multiFloor ? "var(--chart-4)" : "var(--border-strong)",
+          background: draft.multiFloor ? "var(--surface-accent-soft)" : "var(--surface-card)",
+        }}
         onClick={() => onChange((prev) => ({ ...prev, multiFloor: !prev.multiFloor }))}
       >
-        {draft.multiFloor ? "☑" : "☐"} Restrooms on other floors too?
-      </div>
+        <span style={{ fontWeight: 600 }}>Not on the ground floor?</span>
+        <span
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            width: 44,
+            height: 24,
+            borderRadius: 12,
+            background: draft.multiFloor ? "var(--chart-4)" : "var(--border-strong)",
+            padding: "0 3px",
+            fontSize: 10,
+            color: "#fff",
+            transition: "background 0.12s ease",
+          }}
+        >
+          {draft.multiFloor ? "Yes" : "No"}
+        </span>
+      </button>
 
       {draft.multiFloor && (
         <>
-          <div className="lbl">This one is on floor (optional)</div>
+          <div className="lbl">This restroom is on floor</div>
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
             {FLOOR_PRESETS.map((f) => (
               <span
@@ -292,7 +390,7 @@ export function StepVenue({
                   setCustomPrimaryFloor("");
                 }
               }}
-              placeholder="Custom floor, e.g. Mezzanine"
+              placeholder="Other floor, e.g. 2A"
             />
             <button
               className="btn2"
@@ -307,7 +405,7 @@ export function StepVenue({
             </button>
           </div>
 
-          <div className="lbl">Also add floors</div>
+          <div className="lbl">Add restrooms on these other floors</div>
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
             {FLOOR_PRESETS.filter((f) => f !== draft.primary.floorLabel).map((f) => {
               const on = draft.additionalFloors.some((e) => e.floorLabel === f);
@@ -325,30 +423,42 @@ export function StepVenue({
               .filter((e) => e.floorLabel && !FLOOR_PRESETS.includes(e.floorLabel))
               .map((e) => (
                 <span key={e.entryId} className="chip on" onClick={() => removeAdditionalFloor(e.floorLabel!)}>
-                  {e.floorLabel}
+                  {e.floorLabel} ✕
                 </span>
               ))}
+            <span className="chip" onClick={() => setCustomFloorOpen((o) => !o)}>
+              + Add
+            </span>
           </div>
-          <div style={{ display: "flex", gap: 6 }}>
-            <input
-              className="box"
-              style={{ flex: 1 }}
-              value={customFloor}
-              onChange={(e) => setCustomFloor(e.target.value)}
-              placeholder="Custom floor, e.g. Mezzanine"
-            />
-            <button
-              className="btn2"
-              style={{ width: "auto", padding: "8px 12px" }}
-              disabled={!customFloor.trim()}
-              onClick={() => {
-                addAdditionalFloor(customFloor);
-                setCustomFloor("");
-              }}
-            >
-              Add
-            </button>
-          </div>
+          {customFloorOpen && (
+            <div style={{ display: "flex", gap: 6 }}>
+              <input
+                autoFocus
+                className="box"
+                style={{ flex: 1 }}
+                value={customFloor}
+                onChange={(e) => setCustomFloor(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    addAdditionalFloor(customFloor);
+                    setCustomFloor("");
+                  }
+                }}
+                placeholder="Other floor, e.g. 2A"
+              />
+              <button
+                className="btn2"
+                style={{ width: "auto", padding: "8px 12px" }}
+                disabled={!customFloor.trim()}
+                onClick={() => {
+                  addAdditionalFloor(customFloor);
+                  setCustomFloor("");
+                }}
+              >
+                Add
+              </button>
+            </div>
+          )}
         </>
       )}
 

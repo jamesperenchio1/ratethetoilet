@@ -176,6 +176,19 @@ export function StepPhotos({
     }));
   }
 
+  function movePhoto(localId: string, delta: -1 | 1) {
+    onChangeEntry((prev) => {
+      const idx = prev.photos.findIndex((p) => p.localId === localId);
+      if (idx === -1) return prev;
+      const target = idx + delta;
+      if (target < 0 || target >= prev.photos.length) return prev;
+      const photos = [...prev.photos];
+      const [moved] = photos.splice(idx, 1);
+      photos.splice(target, 0, moved);
+      return { ...prev, photos };
+    });
+  }
+
   function removePhoto(localId: string) {
     onChangeEntry((prev) => ({ ...prev, photos: prev.photos.filter((p) => p.localId !== localId) }));
   }
@@ -357,16 +370,18 @@ export function StepPhotos({
           <ProgressFill progress={batchProgress} height={6} track="var(--surface-note)" />
         </div>
       )}
-      <div style={{ fontSize: 11, color: "var(--text-muted)", textAlign: "center" }}>
-        Drag &amp; drop, or paste (Ctrl/Cmd+V) images from your computer
-      </div>
+      {typeof window !== "undefined" && window.matchMedia?.("(hover: hover) and (pointer: fine)").matches && (
+        <div style={{ fontSize: 11, color: "var(--text-muted)", textAlign: "center" }}>
+          Drag &amp; drop, or paste (Ctrl/Cmd+V) images from your computer
+        </div>
+      )}
 
       {entry.photos.length > 0 && (
         <>
           <div className="lbl">Added · {entry.photos.length} of {CONFIG.wizard.maxPhotos}</div>
           {entry.photos.length > 1 && (
             <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
-              Drag photos to reorder — the first one shows first.
+              Reorder with the ▲ ▼ arrows (or drag) — the first photo shows first.
             </div>
           )}
           <div
@@ -463,6 +478,61 @@ export function StepPhotos({
                   </span>
                 )}
               </div>
+              {entry.photos.length > 1 && (
+                <div style={{ display: "flex", gap: 2, justifyContent: "center" }}>
+                  <button
+                    type="button"
+                    aria-label={`Move photo ${i + 1} earlier`}
+                    disabled={i === 0}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      movePhoto(p.localId, -1);
+                    }}
+                    style={{
+                      width: 24,
+                      height: 22,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      fontSize: 12,
+                      border: "1px solid var(--border-strong)",
+                      borderRadius: 4,
+                      background: "var(--surface-card)",
+                      cursor: i === 0 ? "default" : "pointer",
+                      opacity: i === 0 ? 0.35 : 1,
+                    }}
+                  >
+                    ▲
+                  </button>
+                  <span style={{ fontSize: 10, color: "var(--text-muted)", alignSelf: "center", minWidth: 10, textAlign: "center" }}>
+                    {i + 1}
+                  </span>
+                  <button
+                    type="button"
+                    aria-label={`Move photo ${i + 1} later`}
+                    disabled={i === entry.photos.length - 1}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      movePhoto(p.localId, 1);
+                    }}
+                    style={{
+                      width: 24,
+                      height: 22,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      fontSize: 12,
+                      border: "1px solid var(--border-strong)",
+                      borderRadius: 4,
+                      background: "var(--surface-card)",
+                      cursor: i === entry.photos.length - 1 ? "default" : "pointer",
+                      opacity: i === entry.photos.length - 1 ? 0.35 : 1,
+                    }}
+                  >
+                    ▼
+                  </button>
+                </div>
+              )}
               {p.status === "error" && p.errorMessage && (
                 <span style={{ fontSize: 9, color: "var(--red-3)", wordBreak: "break-word" }}>
                   {p.errorMessage}
@@ -480,7 +550,7 @@ export function StepPhotos({
       )}
 
       <div className="note" style={{ fontSize: 11 }}>
-        No people or faces. Uploads keep the date, never your GPS.
+        No people or faces.
       </div>
 
       <button className="btn" disabled={anyUploading} onClick={onNext}>
