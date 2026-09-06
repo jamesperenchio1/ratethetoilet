@@ -1,4 +1,14 @@
 import { useEffect, useRef, useState } from "react";
+import {
+  DndContext,
+  PointerSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import { SortableContext, arrayMove, rectSortingStrategy, useSortable } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { uploadDraftPhoto, photoUrl, friendlyUploadError } from "../../lib/api";
 import { compressImage } from "../../lib/imageCompress";
 import { CONFIG } from "../../lib/config";
@@ -67,6 +77,115 @@ function Thumb({ photo, onClick }: { photo: PendingPhoto; onClick: () => void })
   );
 }
 
+function SortablePhoto({
+  photo,
+  index,
+  loadingEdit,
+  onTap,
+  onRemove,
+  onRetry,
+}: {
+  photo: PendingPhoto;
+  index: number;
+  loadingEdit: boolean;
+  onTap: () => void;
+  onRemove: () => void;
+  onRetry: () => void;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: photo.localId,
+  });
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+    zIndex: isDragging ? 2 : undefined,
+  };
+  return (
+    <div
+      ref={setNodeRef}
+      style={{ ...style, display: "flex", flexDirection: "column", gap: 2, maxWidth: 64 }}
+      {...attributes}
+      {...listeners}
+    >
+      <div style={{ position: "relative", touchAction: "none" }}>
+        <Thumb photo={photo} onClick={onTap} />
+        {loadingEdit && (
+          <span
+            style={{
+              position: "absolute",
+              inset: 0,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: 10,
+            }}
+          >
+            …
+          </span>
+        )}
+        <span
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation();
+            onRemove();
+          }}
+          style={{
+            position: "absolute",
+            right: -5,
+            top: -5,
+            width: 18,
+            height: 18,
+            borderRadius: "50%",
+            background: "var(--ink-1)",
+            color: "#fff",
+            fontSize: 11,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            cursor: "pointer",
+          }}
+        >
+          ✕
+        </span>
+        {photo.status === "error" && (
+          <span
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
+              onRetry();
+            }}
+            style={{
+              position: "absolute",
+              left: -5,
+              bottom: -5,
+              width: 18,
+              height: 18,
+              borderRadius: "50%",
+              background: "var(--red-3)",
+              color: "#fff",
+              fontSize: 11,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              cursor: "pointer",
+            }}
+          >
+            ⟳
+          </span>
+        )}
+      </div>
+      <span style={{ fontSize: 10, color: "var(--text-muted)", textAlign: "center" }}>{index + 1}</span>
+      {photo.status === "error" && photo.errorMessage && (
+        <span style={{ fontSize: 9, color: "var(--red-3)", wordBreak: "break-word" }}>{photo.errorMessage}</span>
+      )}
+      {photo.status !== "error" && photo.warning && (
+        <span style={{ fontSize: 9, color: "var(--text-muted)", wordBreak: "break-word" }}>{photo.warning}</span>
+      )}
+    </div>
+  );
+}
+
 export function StepPhotos({
   entry,
   onChangeEntry,
@@ -90,11 +209,9 @@ export function StepPhotos({
   const uploadRef = useRef<HTMLInputElement>(null);
   const [editing, setEditing] = useState<{ localId: string; file: File } | null>(null);
   const [loadingEdit, setLoadingEdit] = useState<string | null>(null);
-  const [dragLocalId, setDragLocalId] = useState<string | null>(null);
-  const [overIndex, setOverIndex] = useState<number | null>(null);
   const [dragOver, setDragOver] = useState(false);
-  const dragStart = useRef<{ x: number; y: number; id: string } | null>(null);
-  const dragged = useRef(false);
+  const justDragged = useRef(false);
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
 
   function onDropZoneDragOver(e: React.DragEvent) {
     e.preventDefault();
@@ -131,42 +248,20 @@ export function StepPhotos({
     return () => window.removeEventListener("paste", onPaste);
   }, []);
 
-  function onThumbPointerDown(localId: string) {
-    return (e: React.PointerEvent) => {
-      dragStart.current = { x: e.clientX, y: e.clientY, id: localId };
-      dragged.current = false;
-      setDragLocalId(null);
-      setOverIndex(null);
-    };
+  function onDragStart() {
+    justDragged.current = true;
   }
 
-  function onThumbPointerMove(e: React.PointerEvent) {
-    const start = dragStart.current;
-    if (!start) return;
-    if (!dragged.current && Math.hypot(e.clientX - start.x, e.clientY - start.y) < 6) return;
-    dragged.current = true;
-    setDragLocalId(start.id);
-    const el = document.elementFromPoint(e.clientX, e.clientY);
-    const target = el?.closest("[data-photo-id]") as HTMLElement | null;
-    const idx = target ? Number(target.dataset.photoId) : NaN;
-    if (!Number.isNaN(idx)) setOverIndex(idx);
-  }
-
-  function onThumbPointerUp() {
-    const start = dragStart.current;
-    dragStart.current = null;
-    if (dragged.current && start && overIndex != null) {
-      onChangeEntry((prev) => {
-        const from = prev.photos.findIndex((p) => p.localId === start.id);
-        if (from === -1 || overIndex === from) return prev;
-        const photos = [...prev.photos];
-        const [moved] = photos.splice(from, 1);
-        photos.splice(overIndex, 0, moved);
-        return { ...prev, photos };
-      });
-    }
-    setDragLocalId(null);
-    setOverIndex(null);
+  function onDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    justDragged.current = true;
+    if (!over || active.id === over.id) return;
+    onChangeEntry((prev) => {
+      const from = prev.photos.findIndex((p) => p.localId === active.id);
+      const to = prev.photos.findIndex((p) => p.localId === over.id);
+      if (from === -1 || to === -1) return prev;
+      return { ...prev, photos: arrayMove(prev.photos, from, to) };
+    });
   }
 
   function updatePhoto(localId: string, patch: Partial<PendingPhoto>) {
@@ -174,19 +269,6 @@ export function StepPhotos({
       ...prev,
       photos: prev.photos.map((ph) => (ph.localId === localId ? { ...ph, ...patch } : ph)),
     }));
-  }
-
-  function movePhoto(localId: string, delta: -1 | 1) {
-    onChangeEntry((prev) => {
-      const idx = prev.photos.findIndex((p) => p.localId === localId);
-      if (idx === -1) return prev;
-      const target = idx + delta;
-      if (target < 0 || target >= prev.photos.length) return prev;
-      const photos = [...prev.photos];
-      const [moved] = photos.splice(idx, 1);
-      photos.splice(target, 0, moved);
-      return { ...prev, photos };
-    });
   }
 
   function removePhoto(localId: string) {
@@ -381,171 +463,44 @@ export function StepPhotos({
           <div className="lbl">Added · {entry.photos.length} of {CONFIG.wizard.maxPhotos}</div>
           {entry.photos.length > 1 && (
             <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
-              Reorder with the ▲ ▼ arrows (or drag) — the first photo shows first.
+              Drag to reorder — the first photo shows first.
             </div>
           )}
-          <div
-            style={{ display: "flex", gap: 6, flexWrap: "wrap" }}
-            onDragOver={onDropZoneDragOver}
-            onDragLeave={onDropZoneDragLeave}
-            onDrop={onDropZoneDrop}
-          >
-            {entry.photos.map((p, i) => (              <div
-                key={p.localId}
-                data-photo-id={i}
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: 2,
-                  maxWidth: 64,
-                  touchAction: "none",
-                  cursor: "grab",
-                  opacity: dragLocalId === p.localId ? 0.5 : 1,
-                }}
-                onPointerDown={onThumbPointerDown(p.localId)}
-                onPointerMove={onThumbPointerMove}
-                onPointerUp={onThumbPointerUp}
+          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={onDragStart} onDragEnd={onDragEnd}>
+            <SortableContext items={entry.photos.map((p) => p.localId)} strategy={rectSortingStrategy}>
+              <div
+                style={{ display: "flex", gap: 6, flexWrap: "wrap" }}
+                onDragOver={onDropZoneDragOver}
+                onDragLeave={onDropZoneDragLeave}
+                onDrop={onDropZoneDrop}
               >
-              <div style={{ position: "relative" }}>
-                <Thumb
-                  photo={p}
-                  onClick={() => {
-                    if (dragged.current) {
-                      dragged.current = false;
-                      return;
-                    }
-                    // A failed photo's main tap target retries the upload —
-                    // the crop editor isn't useful (or reachable) for a photo
-                    // that never made it to storage and has no preview to fetch.
-                    if (p.status === "error") {
-                      retryPhoto(p.localId);
-                      return;
-                    }
-                    openEditor(p);
-                  }}
-                />
-                {loadingEdit === p.localId && (
-                  <span style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10 }}>
-                    …
-                  </span>
-                )}
-                <span
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    removePhoto(p.localId);
-                  }}
-                  style={{
-                    position: "absolute",
-                    right: -5,
-                    top: -5,
-                    width: 18,
-                    height: 18,
-                    borderRadius: "50%",
-                    background: "var(--ink-1)",
-                    color: "#fff",
-                    fontSize: 11,
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    cursor: "pointer",
-                  }}
-                >
-                  ✕
-                </span>
-                {p.status === "error" && (
-                  <span
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      retryPhoto(p.localId);
+                {entry.photos.map((p, i) => (
+                  <SortablePhoto
+                    key={p.localId}
+                    photo={p}
+                    index={i}
+                    loadingEdit={loadingEdit === p.localId}
+                    onTap={() => {
+                      if (justDragged.current) {
+                        justDragged.current = false;
+                        return;
+                      }
+                      // A failed photo's main tap target retries the upload —
+                      // the crop editor isn't useful (or reachable) for a photo
+                      // that never made it to storage and has no preview to fetch.
+                      if (p.status === "error") {
+                        retryPhoto(p.localId);
+                        return;
+                      }
+                      openEditor(p);
                     }}
-                    style={{
-                      position: "absolute",
-                      left: -5,
-                      bottom: -5,
-                      width: 18,
-                      height: 18,
-                      borderRadius: "50%",
-                      background: "var(--red-3)",
-                      color: "#fff",
-                      fontSize: 11,
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      cursor: "pointer",
-                    }}
-                  >
-                    ⟳
-                  </span>
-                )}
+                    onRemove={() => removePhoto(p.localId)}
+                    onRetry={() => retryPhoto(p.localId)}
+                  />
+                ))}
               </div>
-              {entry.photos.length > 1 && (
-                <div style={{ display: "flex", gap: 2, justifyContent: "center" }}>
-                  <button
-                    type="button"
-                    aria-label={`Move photo ${i + 1} earlier`}
-                    disabled={i === 0}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      movePhoto(p.localId, -1);
-                    }}
-                    style={{
-                      width: 24,
-                      height: 22,
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      fontSize: 12,
-                      border: "1px solid var(--border-strong)",
-                      borderRadius: 4,
-                      background: "var(--surface-card)",
-                      cursor: i === 0 ? "default" : "pointer",
-                      opacity: i === 0 ? 0.35 : 1,
-                    }}
-                  >
-                    ▲
-                  </button>
-                  <span style={{ fontSize: 10, color: "var(--text-muted)", alignSelf: "center", minWidth: 10, textAlign: "center" }}>
-                    {i + 1}
-                  </span>
-                  <button
-                    type="button"
-                    aria-label={`Move photo ${i + 1} later`}
-                    disabled={i === entry.photos.length - 1}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      movePhoto(p.localId, 1);
-                    }}
-                    style={{
-                      width: 24,
-                      height: 22,
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      fontSize: 12,
-                      border: "1px solid var(--border-strong)",
-                      borderRadius: 4,
-                      background: "var(--surface-card)",
-                      cursor: i === entry.photos.length - 1 ? "default" : "pointer",
-                      opacity: i === entry.photos.length - 1 ? 0.35 : 1,
-                    }}
-                  >
-                    ▼
-                  </button>
-                </div>
-              )}
-              {p.status === "error" && p.errorMessage && (
-                <span style={{ fontSize: 9, color: "var(--red-3)", wordBreak: "break-word" }}>
-                  {p.errorMessage}
-                </span>
-              )}
-              {p.status !== "error" && p.warning && (
-                <span style={{ fontSize: 9, color: "var(--text-muted)", wordBreak: "break-word" }}>
-                  {p.warning}
-                </span>
-              )}
-              </div>
-            ))}
-          </div>
+            </SortableContext>
+          </DndContext>
         </>
       )}
 

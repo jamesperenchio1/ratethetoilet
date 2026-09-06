@@ -2,9 +2,22 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ScoreBadge } from "../../components/toilet/ScoreBadge";
 import { useIdentity } from "../../components/IdentityGateProvider";
-import { photoUrl } from "../../lib/api";
+import { photoUrl, deleteOwnToilet } from "../../lib/api";
 import { ExternalIcon, PlusIcon } from "../../components/layout/NavIcons";
+import { accessTypesLabel, venueTypesLabel } from "../../lib/labels";
 import type { Toilet } from "../../lib/types";
+
+function addressLines(t: Toilet): string {
+  return [
+    [t.address_house_number, t.address_road].filter(Boolean).join(" "),
+    t.address_suburb,
+    t.address_city,
+    t.address_postcode,
+    t.address_country,
+  ]
+    .filter((p) => p && p.trim())
+    .join("\n");
+}
 
 export function Posted({
   toilet,
@@ -26,34 +39,104 @@ export function Posted({
   const [dismissed, setDismissed] = useState(false);
   const [email, setEmail] = useState("");
   const [saveState, setSaveState] = useState<"idle" | "sending" | "sent" | "error">("idle");
+  const [confirmRemove, setConfirmRemove] = useState(false);
+  const [removing, setRemoving] = useState(false);
+
+  async function removeListing() {
+    if (removing) return;
+    setRemoving(true);
+    try {
+      await deleteOwnToilet(toilet.id);
+      navigate("/you");
+    } catch {
+      setRemoving(false);
+    }
+  }
+
+  const address = addressLines(toilet);
+  const scoreRows: [string, number | null | undefined][] = [
+    ["Cleanliness", toilet.cleanliness],
+    ["Smell", toilet.smell],
+    ["Privacy", toilet.privacy],
+  ];
 
   return (
     <div className="screen-body">
       <div className="ann">Live now — here's exactly what other people will see.</div>
 
       {photoPaths.length > 0 && (
-        <div style={{ display: "flex", gap: 6, overflowX: "auto" }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           {photoPaths.map((path) => (
             <img
               key={path}
               src={photoUrl(path)}
               alt=""
               style={{
-                height: 130,
-                width: 130,
-                objectFit: "cover",
-                borderRadius: 6,
+                width: "100%",
+                height: "auto",
+                objectFit: "contain",
+                borderRadius: 8,
                 border: "1.5px solid var(--border-strong)",
-                flex: "0 0 auto",
+                display: "block",
+                background: "var(--surface-note)",
               }}
             />
           ))}
         </div>
       )}
 
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-        <b style={{ fontSize: 15 }}>{toilet.venue_name || "Your toilet"}</b>
-        <ScoreBadge score={toilet.overall_score} size={24} />
+      <div
+        className="box"
+        style={{ flexDirection: "column", alignItems: "stretch", gap: 8, borderStyle: "dashed" }}
+      >
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+          <b style={{ fontSize: 16 }}>{toilet.venue_name || "Your toilet"}</b>
+          <ScoreBadge score={toilet.overall_score} size={26} />
+        </div>
+        <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
+          Posted {new Date(toilet.created_at).toLocaleString()}
+        </div>
+        {address && <div style={{ fontSize: 12, whiteSpace: "pre-line", lineHeight: 1.45 }}>{address}</div>}
+        {toilet.venue_types?.length > 0 && (
+          <div style={{ display: "flex", gap: 8, alignItems: "baseline" }}>
+            <span className="lbl" style={{ flexShrink: 0, width: 90 }}>Type</span>
+            <span style={{ fontSize: 13 }}>{venueTypesLabel(toilet.venue_types)}</span>
+          </div>
+        )}
+        {toilet.access_types?.length > 0 && (
+          <div style={{ display: "flex", gap: 8, alignItems: "baseline" }}>
+            <span className="lbl" style={{ flexShrink: 0, width: 90 }}>Access</span>
+            <span style={{ fontSize: 13 }}>{accessTypesLabel(toilet.access_types)}</span>
+          </div>
+        )}
+        {toilet.supplies?.length > 0 && (
+          <div style={{ display: "flex", gap: 8, alignItems: "baseline" }}>
+            <span className="lbl" style={{ flexShrink: 0, width: 90 }}>Supplies</span>
+            <span style={{ fontSize: 13 }}>{toilet.supplies.join(", ")}</span>
+          </div>
+        )}
+        {toilet.wheelchair && (
+          <div style={{ display: "flex", gap: 8, alignItems: "baseline" }}>
+            <span className="lbl" style={{ flexShrink: 0, width: 90 }}>Wheelchair</span>
+            <span style={{ fontSize: 13 }}>{toilet.wheelchair}</span>
+          </div>
+        )}
+        {scoreRows.map(([label, value]) =>
+          value == null ? null : (
+            <div key={label} style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+              <span className="lbl" style={{ flexShrink: 0, width: 90 }}>
+                {label}
+              </span>
+              <span style={{ fontSize: 13 }}>{value}</span>
+            </div>
+          )
+        )}
+        {toilet.hint_chips?.length > 0 && (
+          <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+            <span className="lbl" style={{ flexShrink: 0, width: 90 }}>Hints</span>
+            <span style={{ fontSize: 13 }}>{toilet.hint_chips.join(", ")}</span>
+          </div>
+        )}
       </div>
 
       {totalFloors > 1 && (
@@ -90,7 +173,7 @@ export function Posted({
           ) : (
             <>
               <span>
-                Keep <b>{handle}</b> across devices? Optional — no password needed.
+                Keep <b>{handle}</b> across devices? Optional.
               </span>
               <div style={{ display: "flex", gap: 6 }}>
                 <input
@@ -127,6 +210,28 @@ export function Posted({
             </>
           )}
         </div>
+      )}
+
+      {confirmRemove ? (
+        <div className="box" style={{ borderColor: "var(--red-3)", gap: 6 }}>
+          <span style={{ fontSize: 12 }}>Remove this listing for good?</span>
+          <div style={{ display: "flex", gap: 6 }}>
+            <button className="btn danger" style={{ flex: 1 }} disabled={removing} onClick={removeListing}>
+              {removing ? "…" : "Yes, remove"}
+            </button>
+            <button className="btn2" style={{ flex: 1 }} onClick={() => setConfirmRemove(false)}>
+              Keep
+            </button>
+          </div>
+        </div>
+      ) : (
+        <button
+          className="btn2"
+          style={{ color: "var(--red-3)", borderColor: "var(--red-3)" }}
+          onClick={() => setConfirmRemove(true)}
+        >
+          Remove this listing
+        </button>
       )}
 
       <button className="btn2" onClick={() => navigate(`/t/${toilet.id}`)}>

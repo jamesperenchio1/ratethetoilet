@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { MapView, locateDevice } from "../components/map/MapView";
+import { MapView, locateDevice, useDeviceLocation } from "../components/map/MapView";
 import { ToiletCard } from "../components/toilet/ToiletCard";
 import { listAllToilets } from "../lib/api";
 import { haversineMeters, venueTypesLabel } from "../lib/labels";
@@ -26,6 +26,7 @@ export function Home() {
     | null;
   const navCenter = navState?.center;
   const [center, setCenter] = useState(navCenter ?? BANGKOK);
+  const userLocation = useDeviceLocation();
   const [placeMarker, setPlaceMarker] = useState(navState?.marker ?? null);
   const [toilets, setToilets] = useState<Toilet[] | null>(null);
   const [toiletsError, setToiletsError] = useState(false);
@@ -34,6 +35,7 @@ export function Home() {
   const [sheetExpanded, setSheetExpanded] = useState(false);
   const dragStartY = useRef<number | null>(null);
   const hadNavCenter = useRef(!!navCenter);
+  const autoCentered = useRef(false);
   const [gpsFailed, setGpsFailed] = useState(false);
   const [filters, setFilters] = useState<Filters>({
     freeOnly: false,
@@ -58,12 +60,16 @@ export function Home() {
     // right place to look — don't let a slower/disagreeing device GPS fix
     // pull the view away from the toilet the user just came here to see.
     if (hadNavCenter.current) return;
-    locateDevice()
-      .then(setCenter)
-      .catch(() => {
-        setGpsFailed(true);
-      });
-  }, []);
+    if (autoCentered.current) return;
+    if (!userLocation) return;
+    // Center the map on the device's real position once the first GPS fix
+    // lands. watchPosition keeps streaming fixes; only the first one recenters
+    // so a later pan isn't fought by an automatic re-center.
+    autoCentered.current = true;
+    setCenter({ lat: userLocation.lat, lng: userLocation.lng });
+    setGpsFailed(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userLocation?.lat, userLocation?.lng]);
 
   useEffect(() => {
     let cancelled = false;
@@ -109,12 +115,13 @@ export function Home() {
     });
   }, [toilets, filters]);
 
+  const distanceOrigin = userLocation ?? center;
   const withDistance = useMemo(
     () =>
       filtered
-        .map((t) => ({ t, d: haversineMeters(center, { lat: t.lat, lng: t.lng }) }))
+        .map((t) => ({ t, d: haversineMeters(distanceOrigin, { lat: t.lat, lng: t.lng }) }))
         .sort((a, b) => a.d - b.d),
-    [filtered, center]
+    [filtered, distanceOrigin]
   );
 
   // Group toilets that belong to the same venue into one pin, so a
@@ -148,13 +155,19 @@ export function Home() {
   }, [filtered]);
 
   const onGpsClick = useCallback(() => {
+    if (userLocation) {
+      setCenter({ lat: userLocation.lat, lng: userLocation.lng });
+      setGpsFailed(false);
+      return;
+    }
     locateDevice()
       .then((c) => {
         setCenter(c);
         setGpsFailed(false);
       })
       .catch(() => setGpsFailed(true));
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userLocation?.lat, userLocation?.lng]);
 
   const onDraggableMarkerMove = useCallback(
     (pos: { lat: number; lng: number }) =>
@@ -174,6 +187,7 @@ export function Home() {
           onGpsClick={onGpsClick}
           draggableMarker={placeMarker ?? undefined}
           onDraggableMarkerMove={onDraggableMarkerMove}
+          userLocation={userLocation}
         />
 
         <div

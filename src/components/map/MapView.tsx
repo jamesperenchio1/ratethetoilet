@@ -135,6 +135,7 @@ export function MapView({
   fitToPins = false,
   maxZoom = MAX_ZOOM,
   cacheKey,
+  userLocation,
 }: {
   pins?: MapPin[];
   center?: { lat: number; lng: number };
@@ -153,6 +154,8 @@ export function MapView({
    * keyed by this string, so give every persistently-revisited map its own
    * stable key. Omit for a map that's only ever shown once per flow. */
   cacheKey?: string;
+  /** The device's live position, drawn as a GPS dot (+ heading cone if known). */
+  userLocation?: { lat: number; lng: number; heading?: number | null } | null;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MaplibreMap | null>(null);
@@ -168,6 +171,8 @@ export function MapView({
   useEffect(() => {
     onDragMoveRef.current = onDraggableMarkerMove;
   }, [onDraggableMarkerMove]);
+  const userMarkerRef = useRef<Marker | null>(null);
+  const userConeRef = useRef<HTMLDivElement | null>(null);
   const fitDoneRef = useRef(false);
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
@@ -368,6 +373,88 @@ export function MapView({
     if (cacheKey) mapCache.get(cacheKey)!.dragMarker = marker;
   }, [draggableMarker?.lat, draggableMarker?.lng, cacheKey]);
 
+  // Live "you are here" GPS dot (+ heading cone when the device reports one).
+  // Kept separate from the drag marker so a user pin never collides with a
+  // toilet pin the user is dragging.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    if (userMarkerRef.current) {
+      userMarkerRef.current.remove();
+      userMarkerRef.current = null;
+    }
+    userConeRef.current = null;
+    if (!userLocation) return;
+
+    const el = document.createElement("div");
+    el.style.width = "0";
+    el.style.height = "0";
+    el.style.pointerEvents = "none";
+
+    const ring = document.createElement("div");
+    ring.style.cssText = [
+      "position:absolute",
+      "left:-16px",
+      "top:-16px",
+      "width:32px",
+      "height:32px",
+      "border-radius:50%",
+      "background:rgba(11,95,165,.18)",
+    ].join(";");
+
+    const dot = document.createElement("div");
+    dot.style.cssText = [
+      "position:absolute",
+      "left:-6px",
+      "top:-6px",
+      "width:12px",
+      "height:12px",
+      "border-radius:50%",
+      "background:#0B5FA5",
+      "border:2px solid #fff",
+      "box-shadow:0 0 0 1px rgba(11,95,165,.6),0 1px 3px rgba(0,0,0,.4)",
+    ].join(";");
+
+    el.appendChild(ring);
+    el.appendChild(dot);
+
+    if (userLocation.heading != null) {
+      const cone = document.createElement("div");
+      cone.style.cssText = [
+        "position:absolute",
+        "left:-7px",
+        "top:-16px",
+        "width:0",
+        "height:0",
+        "border-left:7px solid transparent",
+        "border-right:7px solid transparent",
+        "border-bottom:16px solid rgba(11,95,165,.55)",
+        "transform-origin:50% 100%",
+        `transform:rotate(${userLocation.heading}deg)`,
+      ].join(";");
+      el.appendChild(cone);
+      userConeRef.current = cone;
+    }
+
+    userMarkerRef.current = new Marker({ element: el })
+      .setLngLat([userLocation.lng, userLocation.lat])
+      .addTo(map);
+
+    return () => {
+      if (userMarkerRef.current) {
+        userMarkerRef.current.remove();
+        userMarkerRef.current = null;
+        userConeRef.current = null;
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userLocation?.lat, userLocation?.lng]);
+
+  useEffect(() => {
+    if (!userConeRef.current || userLocation?.heading == null) return;
+    userConeRef.current.style.transform = `rotate(${userLocation.heading}deg)`;
+  }, [userLocation?.heading]);
+
   return (
     <div className={className} style={{ position: "relative", flex: 1, minHeight: 140 }}>
       <div ref={containerRef} style={{ position: "absolute", inset: 0 }} />
@@ -452,4 +539,46 @@ export function locateDevice(): Promise<{ lat: number; lng: number }> {
       );
     attempt(true);
   });
+}
+
+export interface DeviceLocation {
+  lat: number;
+  lng: number;
+  heading: number | null;
+  accuracy: number | null;
+}
+
+/**
+ * Continuously tracks the device's position with `watchPosition`, so it keeps
+ * delivering fixes even when the initial one-shot call raced a permission
+ * grant or timed out. Returns null until the first fix arrives; the heading is
+ * null when the device has no compass.
+ */
+export function useDeviceLocation(): DeviceLocation | null {
+  const [loc, setLoc] = useState<DeviceLocation | null>(null);
+  useEffect(() => {
+    if (!("geolocation" in navigator)) return;
+    let cancelled = false;
+    const id = navigator.geolocation.watchPosition(
+      (pos) => {
+        if (cancelled) return;
+        setLoc({
+          lat: pos.coords.latitude,
+          lng: pos.coords.longitude,
+          heading: pos.coords.heading ?? null,
+          accuracy: pos.coords.accuracy ?? null,
+        });
+      },
+      () => {
+        // Permission denied or no fix yet — keep watching; callbacks resume
+        // once the user grants access. The caller decides what to render.
+      },
+      { enableHighAccuracy: true, maximumAge: 5000, timeout: 30000 }
+    );
+    return () => {
+      cancelled = true;
+      navigator.geolocation.clearWatch(id);
+    };
+  }, []);
+  return loc;
 }
