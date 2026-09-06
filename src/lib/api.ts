@@ -258,8 +258,8 @@ export async function getToilet(id: string): Promise<ToiletWithAuthor | null> {
        photos:toilet_photos(*),
        reviews(*,
          author:profiles!reviews_author_id_fkey(id, handle),
-         replies(*, author:profiles!review_replies_author_id_fkey(id, handle)),
-         votes(*, voter:profiles!review_votes_voter_id_fkey(id, handle)))`
+         replies:review_replies(*, author:profiles!review_replies_author_id_fkey(id, handle)),
+         votes:review_votes(*, voter:profiles!review_votes_voter_id_fkey(id, handle)))`
     )
     .eq("id", id)
     .order("position", { ascending: true, foreignTable: "toilet_photos" })
