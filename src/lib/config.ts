@@ -29,6 +29,19 @@ export const CONFIG = {
     pinSpreadThresholdPx: 36,
     /** Ring circumference budget per pin (px) when spreading an overlapping cluster. */
     pinSpreadStepPx: 40,
+    /** Below this zoom, nearby pins collapse into a single numbered cluster
+     *  bubble instead of rendering one labeled pin per toilet — with ~150+
+     *  toilets in view at city/country zoom, individual labels just pile up
+     *  into unreadable overlapping text. */
+    clusterMaxZoom: 13,
+    /** Side length (px) of the screen-space grid cell used to bucket pins into
+     *  a cluster below `clusterMaxZoom` — sized to comfortably fit a label
+     *  pill so two clusters can't still collide. */
+    clusterCellPx: 100,
+    /** Below this zoom (but at/above `clusterMaxZoom`, where pins are still
+     *  individual), pin labels are hidden and only the score badge shows —
+     *  labels this dense reliably overlap even after pin-spreading. */
+    labelMinZoom: 15,
     tileStyleUrl: "https://tiles.openfreemap.org/styles/liberty",
     /** Device geolocation request timeout (ms). */
     geolocationTimeoutMs: 8000,

@@ -15,6 +15,17 @@ import type { ToiletWithAuthor, ReportTargetType, Review, ReviewVote } from "../
 import { useIdentity } from "../components/IdentityGateProvider";
 import { ExternalIcon } from "../components/layout/NavIcons";
 
+// Hands off to the device's own Maps app for real turn-by-turn — Apple Maps
+// on iOS (Google Maps has no reliable universal directions link on iOS
+// Safari), Google Maps everywhere else. Both use the device's current
+// location as the implicit origin, so no origin coordinates are needed here.
+function navigateUrl(lat: number, lng: number): string {
+  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+  return isIOS
+    ? `https://maps.apple.com/?daddr=${lat},${lng}&dirflg=w`
+    : `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}&travelmode=walking`;
+}
+
 export function ToiletDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -536,11 +547,11 @@ export function ToiletDetail() {
         <a
           className="btn"
           style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}
-          href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(displayName)}@${toilet.lat},${toilet.lng}`}
+          href={navigateUrl(toilet.lat, toilet.lng)}
           target="_blank"
           rel="noreferrer"
         >
-          <ExternalIcon /> Open in Maps
+          <ExternalIcon /> Navigate
         </a>
       </div>
 

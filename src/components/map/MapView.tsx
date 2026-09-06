@@ -123,6 +123,36 @@ function applyPinSpread(map: MaplibreMap, markers: Marker[], pins: MapPin[]): vo
   }
 }
 
+// Below CONFIG.map.clusterMaxZoom, dozens/hundreds of individually-labeled
+// pins is unreadable — bucket them into a screen-space grid (same idea as the
+// pin-spread grid above, but cell-sized to fit a label pill) and collapse
+// each cell into one cluster bubble. Mirrors groupScore's averaging so a
+// cluster's color still reflects what's inside it.
+function clusterPins(map: MaplibreMap, pins: MapPin[], cellPx: number): MapPin[] {
+  const cells = new Map<string, { lats: number[]; lngs: number[]; pins: MapPin[] }>();
+  for (const pin of pins) {
+    const p = map.project([pin.lng, pin.lat]);
+    const key = `${Math.floor(p.x / cellPx)},${Math.floor(p.y / cellPx)}`;
+    let cell = cells.get(key);
+    if (!cell) {
+      cell = { lats: [], lngs: [], pins: [] };
+      cells.set(key, cell);
+    }
+    cell.lats.push(pin.lat);
+    cell.lngs.push(pin.lng);
+    cell.pins.push(pin);
+  }
+  return Array.from(cells.entries()).map(([key, cell]) => {
+    if (cell.pins.length === 1) return cell.pins[0];
+    const lat = cell.lats.reduce((a, b) => a + b, 0) / cell.lats.length;
+    const lng = cell.lngs.reduce((a, b) => a + b, 0) / cell.lngs.length;
+    const count = cell.pins.reduce((sum, p) => sum + (p.count ?? 1), 0);
+    const scores = cell.pins.map((p) => p.score).filter((s): s is number => s != null);
+    const score = scores.length ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : null;
+    return { id: `cluster:${key}`, lat, lng, score, count };
+  });
+}
+
 export function MapView({
   pins = [],
   center,
@@ -159,9 +189,7 @@ export function MapView({
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MaplibreMap | null>(null);
-  const markersRef = useRef<Marker[]>([]);
   const markersMapRef = useRef<Map<string, Marker>>(new Map());
-  const pinsRef = useRef<MapPin[]>([]);
   const onPinClickRef = useRef(onPinClick);
   useEffect(() => {
     onPinClickRef.current = onPinClick;
@@ -174,6 +202,7 @@ export function MapView({
   const userMarkerRef = useRef<Marker | null>(null);
   const userConeRef = useRef<HTMLDivElement | null>(null);
   const fitDoneRef = useRef(false);
+  const renderMarkersRef = useRef<() => void>(() => {});
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
 
@@ -185,11 +214,13 @@ export function MapView({
     let map: MaplibreMap;
 
     const cached = cacheKey ? mapCache.get(cacheKey) : undefined;
+    // Zoom changes cross the cluster/label thresholds too, not just pans —
+    // re-run the full render (re-cluster + re-spread), not just spread.
     const spread = () => {
       if (rafId != null) return;
       rafId = requestAnimationFrame(() => {
         rafId = null;
-        applyPinSpread(map, markersRef.current, pinsRef.current);
+        renderMarkersRef.current();
       });
     };
 
@@ -214,7 +245,7 @@ export function MapView({
       map.on("move", spread);
       mapRef.current = map;
       setLoading(false);
-      applyPinSpread(map, markersRef.current, pinsRef.current);
+      renderMarkersRef.current();
     } else {
       const c = center ?? BANGKOK;
       try {
@@ -234,7 +265,7 @@ export function MapView({
       map.on("move", spread);
       map.once("load", () => {
         setLoading(false);
-        applyPinSpread(map, markersRef.current, pinsRef.current);
+        renderMarkersRef.current();
       });
       mapRef.current = map;
       if (cacheKey) {
@@ -270,18 +301,28 @@ export function MapView({
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
+    // Re-bound so TS keeps the non-null narrowing inside the nested `render`
+    // function declaration below (closures over the original `const` don't
+    // retain it across a hoisted function boundary).
+    const m = map;
 
-    function labelFor(pin: MapPin): string {
-      if (pin.label) {
+    function labelFor(pin: MapPin, showLabel: boolean): string {
+      if (showLabel && pin.label) {
         const parts = [pin.label];
         if (pin.count && pin.count > 1) parts.push(String(pin.count));
         if (pin.score != null) parts.push(String(pin.score));
         return parts.join(" · ");
       }
+      // No name to show (either a cluster bubble, or labels are hidden at
+      // this zoom) — lead with the count when there's more than one toilet
+      // behind this pin, so a cluster still reads as "42" rather than "–".
+      if (pin.count && pin.count > 1) {
+        return pin.score != null ? `${pin.count} · ${pin.score}` : String(pin.count);
+      }
       return pin.score == null ? "–" : String(pin.score);
     }
 
-    function styleEl(el: HTMLDivElement, pin: MapPin) {
+    function styleEl(el: HTMLDivElement, pin: MapPin, showLabel: boolean) {
       el.style.background = scoreColor(pin.score);
       el.style.color = "#fff";
       el.style.font = "600 11px 'IBM Plex Mono', monospace";
@@ -294,52 +335,84 @@ export function MapView({
       el.style.overflow = "hidden";
       el.style.textOverflow = "ellipsis";
       el.style.whiteSpace = "nowrap";
-      el.textContent = labelFor(pin);
+      el.textContent = labelFor(pin, showLabel);
+      const countLabel = pin.count && pin.count > 1 ? `${pin.count} toilets, ` : "";
+      const scoreLabel = pin.score == null ? "unrated" : `score ${pin.score}`;
       el.setAttribute(
         "aria-label",
-        `${pin.label ? pin.label + ", " : ""}${pin.score == null ? "unrated" : `score ${pin.score}`}`
+        `${showLabel && pin.label ? pin.label + ", " : ""}${countLabel}${scoreLabel}`
       );
     }
 
-    // Diff against the existing marker set instead of tearing every marker
-    // down and recreating it on each change — filter toggles etc. used to
-    // rebuild the whole DOM set even when most pins were unchanged.
-    const existing = markersMapRef.current;
-    const nextIds = new Set(pins.map((p) => p.id));
-    for (const [id, marker] of existing) {
-      if (!nextIds.has(id)) {
-        marker.remove();
-        existing.delete(id);
-      }
-    }
-    for (const pin of pins) {
-      const current = existing.get(pin.id);
-      if (current) {
-        current.setLngLat([pin.lng, pin.lat]);
-        styleEl(current.getElement() as HTMLDivElement, pin);
-        continue;
-      }
-      const el = document.createElement("div");
-      el.setAttribute("role", "button");
-      el.tabIndex = 0;
-      styleEl(el, pin);
-      const activate = () => onPinClickRef.current?.(pin.id);
-      el.addEventListener("click", activate);
-      el.addEventListener("keydown", (e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          activate();
+    function render() {
+      // Below clusterMaxZoom there are too many pins for individual labels to
+      // ever fit — collapse them into grid-bucketed cluster bubbles instead.
+      // At/above it, keep one pin per toilet (labels hidden below
+      // labelMinZoom, where even spread-apart pins would still overlap).
+      // Recomputed on every call (including from the "move"/zoom handler),
+      // not just when `pins` changes, since zooming alone crosses these
+      // thresholds too.
+      const zoom = m.getZoom();
+      const clustered = zoom < CONFIG.map.clusterMaxZoom;
+      const showLabels = zoom >= CONFIG.map.labelMinZoom;
+      const renderPins = clustered ? clusterPins(m, pins, CONFIG.map.clusterCellPx) : pins;
+
+      // Diff against the existing marker set instead of tearing every marker
+      // down and recreating it on each change — filter toggles etc. used to
+      // rebuild the whole DOM set even when most pins were unchanged.
+      const existing = markersMapRef.current;
+      const nextIds = new Set(renderPins.map((p) => p.id));
+      for (const [id, marker] of existing) {
+        if (!nextIds.has(id)) {
+          marker.remove();
+          existing.delete(id);
         }
-      });
-      existing.set(
-        pin.id,
-        new Marker({ element: el }).setLngLat([pin.lng, pin.lat]).addTo(map)
-      );
+      }
+      for (const pin of renderPins) {
+        const isCluster = pin.id.startsWith("cluster:");
+        const current = existing.get(pin.id);
+        if (current) {
+          current.setLngLat([pin.lng, pin.lat]);
+          styleEl(current.getElement() as HTMLDivElement, pin, showLabels);
+          continue;
+        }
+        const el = document.createElement("div");
+        el.setAttribute("role", "button");
+        el.tabIndex = 0;
+        styleEl(el, pin, showLabels);
+        const marker = new Marker({ element: el }).setLngLat([pin.lng, pin.lat]).addTo(m);
+        // A cluster isn't one toilet — clicking it zooms in on it instead of
+        // navigating anywhere. Read the marker's live position (not the pin
+        // captured at creation) so this stays correct if the cluster's
+        // centroid shifts on a later re-render.
+        const activate = () => {
+          if (isCluster) {
+            const pos = marker.getLngLat();
+            m.easeTo({ center: [pos.lng, pos.lat], zoom: Math.min(m.getZoom() + 3, maxZoom), duration: 400 });
+          } else {
+            onPinClickRef.current?.(pin.id);
+          }
+        };
+        el.addEventListener("click", activate);
+        el.addEventListener("keydown", (e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            activate();
+          }
+        });
+        existing.set(pin.id, marker);
+      }
+
+      // Clusters already sit at distinct grid-cell centroids — only
+      // individual (non-clustered) pins need the near-collision fan-out.
+      if (!clustered) {
+        applyPinSpread(m, renderPins.map((p) => existing.get(p.id)!), renderPins);
+      }
     }
 
-    markersRef.current = pins.map((p) => existing.get(p.id)!);
-    pinsRef.current = pins;
-    applyPinSpread(map, markersRef.current, pins);
+    renderMarkersRef.current = render;
+    render();
+
     if (fitToPins && !fitDoneRef.current && pins.length > 0) {
       const bounds = new LngLatBounds();
       pins.forEach((p) => bounds.extend([p.lng, p.lat]));
