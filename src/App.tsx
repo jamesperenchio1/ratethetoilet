@@ -14,6 +14,7 @@ import { ResetPassword } from "./routes/ResetPassword";
 import { Settings } from "./routes/Settings";
 import { AuthCallback } from "./routes/AuthCallback";
 import { AdminDashboard } from "./routes/admin/AdminDashboard";
+import { Rules } from "./routes/Rules";
 
 const TAB_ROUTES = new Set(["/", "/you"]);
 
@@ -37,6 +38,7 @@ export default function App() {
         <Route path="/settings" element={<Settings />} />
         <Route path="/auth/callback" element={<AuthCallback />} />
         <Route path="/auth/reset-password" element={<ResetPassword />} />
+        <Route path="/rules" element={<Rules />} />
         <Route path="/admin" element={<AdminDashboard />} />
       </Routes>
       {showNav && <BottomNav />}

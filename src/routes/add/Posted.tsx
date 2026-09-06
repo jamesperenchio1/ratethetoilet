@@ -123,7 +123,7 @@ export function Posted({
         )}
         {scoreRows.map(([label, value]) =>
           value == null ? null : (
-            <div key={label} style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+            <div key={label} style={{ display: "flex", gap: 8, alignItems: "baseline" }}>
               <span className="lbl" style={{ flexShrink: 0, width: 90 }}>
                 {label}
               </span>

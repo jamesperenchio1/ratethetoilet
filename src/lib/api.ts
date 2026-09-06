@@ -4,6 +4,8 @@ import type {
   Report,
   ReportTargetType,
   Review,
+  ReviewReply,
+  ReviewVote,
   Toilet,
   ToiletPhoto,
   ToiletWithAuthor,
@@ -254,7 +256,10 @@ export async function getToilet(id: string): Promise<ToiletWithAuthor | null> {
     .select(
       `*, author:profiles!toilets_author_id_fkey(id, handle),
        photos:toilet_photos(*),
-       reviews(*, author:profiles!reviews_author_id_fkey(id, handle))`
+       reviews(*,
+         author:profiles!reviews_author_id_fkey(id, handle),
+         replies(*, author:profiles!review_replies_author_id_fkey(id, handle)),
+         votes(*, voter:profiles!review_votes_voter_id_fkey(id, handle)))`
     )
     .eq("id", id)
     .order("position", { ascending: true, foreignTable: "toilet_photos" })
@@ -475,6 +480,49 @@ export async function addReview(
     .single();
   if (error) throw error;
   return data as Review;
+}
+
+export async function replyToReview(
+  authorId: string,
+  reviewId: string,
+  body: string
+): Promise<ReviewReply> {
+  const { data, error } = await supabase
+    .from("review_replies")
+    .insert({ review_id: reviewId, author_id: authorId, body })
+    .select()
+    .single();
+  if (error) throw error;
+  return data as ReviewReply;
+}
+
+export async function voteReview(
+  voterId: string,
+  reviewId: string,
+  value: number
+): Promise<ReviewVote> {
+  const { data, error } = await supabase
+    .from("review_votes")
+    .upsert(
+      { review_id: reviewId, voter_id: voterId, value },
+      { onConflict: "review_id,voter_id" }
+    )
+    .select()
+    .single();
+  if (error) throw error;
+  return data as ReviewVote;
+}
+
+export async function unvoteReview(
+  voterId: string,
+  reviewId: string
+): Promise<void> {
+  const { error } = await supabase
+    .from("review_votes")
+    .delete()
+    .eq("review_id", reviewId)
+    .eq("voter_id", voterId);
+  if (error) throw error;
 }
 
 export async function fileReport(

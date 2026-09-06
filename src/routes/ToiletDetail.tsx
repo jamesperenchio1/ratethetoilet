@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { TopBar } from "../components/layout/TopBar";
 import { ReportSheet } from "../components/ReportSheet";
-import { getToilet, addReview, photoUrl, deleteOwnToilet, reorderToiletPhotos } from "../lib/api";
+import { getToilet, addReview, photoUrl, deleteOwnToilet, reorderToiletPhotos, replyToReview, voteReview, unvoteReview } from "../lib/api";
 import { isReportedLocally } from "../lib/reportedLocal";
 import { addressFromFlat } from "../lib/geocode";
 import { AddressBlock } from "../components/AddressBlock";
@@ -11,7 +11,7 @@ import { accessTypesLabel, venueTypesLabel } from "../lib/labels";
 import { scoreColor } from "../lib/score";
 import { CONFIG } from "../lib/config";
 import { getTurnstileToken } from "../lib/turnstile";
-import type { ToiletWithAuthor, ReportTargetType } from "../lib/types";
+import type { ToiletWithAuthor, ReportTargetType, Review, ReviewVote } from "../lib/types";
 import { useIdentity } from "../components/IdentityGateProvider";
 import { ExternalIcon } from "../components/layout/NavIcons";
 
@@ -35,9 +35,11 @@ export function ToiletDetail() {
   const [overIndex, setOverIndex] = useState<number | null>(null);
   const dragStart = useRef<{ x: number; y: number; idx: number } | null>(null);
   const dragged = useRef(false);
-  const touchStartX = useRef<number | null>(null);
   const [savingOrder, setSavingOrder] = useState(false);
   const [reorderError, setReorderError] = useState(false);
+  const [replyFor, setReplyFor] = useState<string | null>(null);
+  const [replyText, setReplyText] = useState("");
+  const [voting, setVoting] = useState<string | null>(null);
 
   async function load(attempt = 0) {
     if (!id) return;
@@ -97,6 +99,39 @@ export function ToiletDetail() {
     } finally {
       setPosting(false);
     }
+  }
+
+  async function submitReply(reviewId: string) {
+    const text = replyText.trim();
+    if (!text || posting) return;
+    setPosting(true);
+    try {
+      await withIdentity(async (p) => {
+        await replyToReview(p.id, reviewId, text);
+      });
+      setReplyText("");
+      setReplyFor(null);
+      load();
+      setJustPosted(true);
+      setTimeout(() => setJustPosted(false), 2500);
+    } finally {
+      setPosting(false);
+    }
+  }
+
+  function handleVote(r: Review & { votes?: ReviewVote[] }, value: number) {
+    if (voting === r.id) return;
+    setVoting(r.id);
+    withIdentity(async (p) => {
+      const existing = r.votes?.find((v) => v.voter_id === p.id);
+      try {
+        if (existing?.value === value) await unvoteReview(p.id, r.id);
+        else await voteReview(p.id, r.id, value);
+        load();
+      } finally {
+        setVoting(null);
+      }
+    });
   }
 
   async function removeListing() {
@@ -196,140 +231,73 @@ export function ToiletDetail() {
         {photos.length > 0 ? (
           <div>
             <div
-              style={{ position: "relative" }}
-              onTouchStart={(e) => {
-                touchStartX.current = e.touches[0].clientX;
-              }}
-              onTouchEnd={(e) => {
-                if (touchStartX.current == null) return;
-                const delta = e.changedTouches[0].clientX - touchStartX.current;
-                touchStartX.current = null;
-                if (Math.abs(delta) > 40) {
-                  setPhotoIndex((i) =>
-                    delta > 0
-                      ? (i - 1 + photos.length) % photos.length
-                      : (i + 1) % photos.length
-                  );
-                }
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fill, minmax(110px, 1fr))",
+                gap: 6,
               }}
             >
-              <img
-                src={photoUrl(photos[photoIndex].storage_path)}
-                alt=""
-                style={{
-                  width: "100%",
-                  height: 180,
-                  objectFit: "cover",
-                  borderRadius: 6,
-                  border: "1.5px solid var(--border-strong)",
-                }}
-                onClick={() => setViewer(true)}
-              />
-              {photos.length > 1 && (
-                <span
+              {photos.map((p, i) => (
+                <div
+                  key={p.id}
+                  data-photo-idx={i}
                   style={{
-                    position: "absolute",
-                    left: 6,
-                    top: "50%",
-                    transform: "translateY(-50%)",
-                    fontSize: 26,
-                    color: "#fff",
-                    background: "rgba(0,0,0,.35)",
+                    position: "relative",
+                    height: 140,
                     borderRadius: 6,
-                    cursor: "pointer",
-                    padding: "0 8px",
-                    lineHeight: 1,
+                    overflow: "hidden",
+                    background: "var(--surface-note)",
+                    cursor: isAuthor ? "grab" : "pointer",
+                    border: `2px solid ${
+                      i === photoIndex
+                        ? "var(--chart-4)"
+                        : overIndex === i && dragIdx != null
+                          ? "var(--red-3)"
+                          : "var(--border-strong)"
+                    }`,
+                    opacity: dragIdx === i ? 0.5 : 1,
+                    touchAction: "none",
                   }}
-                  aria-label="Previous photo"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setPhotoIndex((i) => (i - 1 + photos.length) % photos.length);
+                  onPointerDown={isAuthor ? onThumbPointerDown(i) : undefined}
+                  onPointerMove={isAuthor ? onThumbPointerMove : undefined}
+                  onPointerUp={isAuthor ? onThumbPointerUp : undefined}
+                  onClick={() => {
+                    if (dragged.current) return;
+                    setPhotoIndex(i);
+                    setViewer(true);
                   }}
                 >
-                  ‹
-                </span>
-              )}
-              {photos.length > 1 && (
-                <span
-                  style={{
-                    position: "absolute",
-                    right: 6,
-                    top: "50%",
-                    transform: "translateY(-50%)",
-                    fontSize: 26,
-                    color: "#fff",
-                    background: "rgba(0,0,0,.35)",
-                    borderRadius: 6,
-                    cursor: "pointer",
-                    padding: "0 8px",
-                    lineHeight: 1,
-                  }}
-                  aria-label="Next photo"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setPhotoIndex((i) => (i + 1) % photos.length);
-                  }}
-                >
-                  ›
-                </span>
-              )}
-              <span
-                style={{
-                  position: "absolute",
-                  right: 8,
-                  top: 8,
-                  fontSize: 11,
-                  color: "#fff",
-                  cursor: "pointer",
-                  display: "flex",
-                  alignItems: "center",
-                  minHeight: 32,
-                  padding: "0 6px",
-                }}
-                aria-label="Report this photo"
-                onClick={() =>
-                  setReport({ type: "photo", id: photos[photoIndex].id, label: toilet.venue_name || "" })
-                }
-              >
-                photo {photoIndex + 1}/{photos.length} · <b style={{ color: "var(--red-3)" }}>⚑</b>
-              </span>
-            </div>
-            {photos.length > 1 && (
-              <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap", alignItems: "center" }}>
-                {photos.map((p, i) => (
-                  <div
-                    key={p.id}
-                    data-photo-idx={i}
+                  <img
+                    src={photoUrl(p.storage_path)}
+                    alt=""
+                    style={{ width: "100%", height: "100%", objectFit: "contain", pointerEvents: "none" }}
+                  />
+                  <span
                     style={{
-                      width: 48,
-                      height: 48,
+                      position: "absolute",
+                      right: 4,
+                      top: 4,
+                      fontSize: 11,
+                      color: "#fff",
+                      background: "rgba(0,0,0,.35)",
                       borderRadius: 6,
-                      overflow: "hidden",
-                      cursor: isAuthor ? "grab" : "pointer",
-                      border: `2px solid ${
-                        i === photoIndex
-                          ? "var(--chart-4)"
-                          : overIndex === i && dragIdx != null
-                            ? "var(--red-3)"
-                            : "var(--border-strong)"
-                      }`,
-                      opacity: dragIdx === i ? 0.5 : 1,
-                      touchAction: "none",
+                      cursor: "pointer",
+                      padding: "0 5px",
+                      lineHeight: 1.4,
+                      display: "flex",
+                      alignItems: "center",
                     }}
-                    onPointerDown={isAuthor ? onThumbPointerDown(i) : undefined}
-                    onPointerMove={isAuthor ? onThumbPointerMove : undefined}
-                    onPointerUp={isAuthor ? onThumbPointerUp : undefined}
-                    onClick={isAuthor ? undefined : () => setPhotoIndex(i)}
+                    aria-label="Report this photo"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setReport({ type: "photo", id: p.id, label: toilet.venue_name || "" });
+                    }}
                   >
-                    <img
-                      src={photoUrl(p.storage_path)}
-                      alt=""
-                      style={{ width: "100%", height: "100%", objectFit: "cover", pointerEvents: "none" }}
-                    />
-                  </div>
-                ))}
-              </div>
-            )}
+                    ⚑
+                  </span>
+                </div>
+              ))}
+            </div>
             {isAuthor && photos.length > 1 && (
               <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>
                 Drag to reorder — the first photo shows first.
@@ -463,22 +431,98 @@ export function ToiletDetail() {
         {reviews.length === 0 && (
           <div style={{ fontSize: 12, color: "var(--text-muted)" }}>No reviews yet — be the first.</div>
         )}
-        {reviews.map((r) => (
-          <div key={r.id} className="box" style={{ fontSize: 11 }}>
-            "{r.body}"{" "}
-            <span style={{ color: "var(--text-muted)" }}>
-              {r.author?.handle ?? "unknown"} · {new Date(r.created_at).toLocaleString()} ·{" "}
-              <span
-                role="button"
-                aria-label="Report this review"
-                style={{ cursor: "pointer", color: "var(--red-3)", minHeight: 32, display: "inline-flex", alignItems: "center", padding: "0 4px" }}
-                onClick={() => setReport({ type: "review", id: r.id, label: r.body })}
-              >
-                ⚑ report
+        {reviews.map((r) => {
+          const votes = r.votes ?? [];
+          const score = votes.reduce((a, v) => a + v.value, 0);
+          const myVote = profile ? votes.find((v) => v.voter_id === profile.id)?.value : undefined;
+          const replies = (r.replies ?? []).filter(
+            (rp) => !rp.hidden && !isReportedLocally("reply", rp.id)
+          );
+          return (
+            <div key={r.id} className="box" style={{ fontSize: 11 }}>
+              "{r.body}"{" "}
+              <span style={{ color: "var(--text-muted)" }}>
+                {r.author?.handle ?? "unknown"} · {new Date(r.created_at).toLocaleString()} ·{" "}
+                <span
+                  role="button"
+                  aria-label="Report this review"
+                  style={{ cursor: "pointer", color: "var(--red-3)", minHeight: 32, display: "inline-flex", alignItems: "center", padding: "0 4px" }}
+                  onClick={() => setReport({ type: "review", id: r.id, label: r.body })}
+                >
+                  ⚑ report
+                </span>
               </span>
-            </span>
-          </div>
-        ))}
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6 }}>
+                <span
+                  role="button"
+                  aria-label="Upvote this review"
+                  onClick={() => handleVote(r, 1)}
+                  style={{ cursor: "pointer", color: myVote === 1 ? "var(--chart-4)" : "var(--text-muted)", opacity: voting === r.id ? 0.5 : 1, minHeight: 32, display: "inline-flex", alignItems: "center", padding: "0 4px" }}
+                >
+                  ▲
+                </span>
+                <span style={{ minWidth: 16, textAlign: "center" }}>{score}</span>
+                <span
+                  role="button"
+                  aria-label="Downvote this review"
+                  onClick={() => handleVote(r, -1)}
+                  style={{ cursor: "pointer", color: myVote === -1 ? "var(--red-3)" : "var(--text-muted)", opacity: voting === r.id ? 0.5 : 1, minHeight: 32, display: "inline-flex", alignItems: "center", padding: "0 4px" }}
+                >
+                  ▼
+                </span>
+                <span
+                  role="button"
+                  aria-label="Reply to this review"
+                  onClick={() => {
+                    setReplyFor(replyFor === r.id ? null : r.id);
+                    setReplyText("");
+                  }}
+                  style={{ cursor: "pointer", color: "var(--chart-4)", minHeight: 32, display: "inline-flex", alignItems: "center", padding: "0 4px" }}
+                >
+                  Reply
+                </span>
+              </div>
+              {replyFor === r.id && (
+                <div style={{ marginTop: 6 }}>
+                  <textarea
+                    value={replyText}
+                    onChange={(e) => setReplyText(e.target.value)}
+                    placeholder="Write a reply…"
+                    rows={2}
+                    maxLength={CONFIG.wizard.reviewMaxLength}
+                    style={{ border: "none", resize: "none", fontSize: 11, width: "100%" }}
+                  />
+                  <div style={{ display: "flex", justifyContent: "flex-end", gap: 6 }}>
+                    <button className="btn2" onClick={() => setReplyFor(null)}>Cancel</button>
+                    <button className="btn" disabled={!replyText.trim() || posting} onClick={() => submitReply(r.id)}>
+                      {posting ? "Posting…" : "Post"}
+                    </button>
+                  </div>
+                </div>
+              )}
+              {replies.length > 0 && (
+                <div style={{ marginLeft: 12, marginTop: 6, borderLeft: "2px solid var(--line)", paddingLeft: 8, display: "flex", flexDirection: "column", gap: 4 }}>
+                  {replies.map((rp) => (
+                    <div key={rp.id}>
+                      "{rp.body}"{" "}
+                      <span style={{ color: "var(--text-muted)" }}>
+                        {rp.author?.handle ?? "unknown"} · {new Date(rp.created_at).toLocaleString()} ·{" "}
+                        <span
+                          role="button"
+                          aria-label="Report this reply"
+                          style={{ cursor: "pointer", color: "var(--red-3)", minHeight: 32, display: "inline-flex", alignItems: "center", padding: "0 4px" }}
+                          onClick={() => setReport({ type: "reply", id: rp.id, label: rp.body })}
+                        >
+                          ⚑ report
+                        </span>
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
 
         <span
           style={{ fontSize: 12, color: "var(--chart-4)", cursor: "pointer" }}

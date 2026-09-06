@@ -124,7 +124,7 @@ export const CONFIG = {
     nearbyLimit: 200,
     /** Hard cap on listAllToilets() — loose on purpose (the app is small),
      * but an unbounded "select *" isn't safe to leave in forever. */
-    allToiletsLimit: 3000,
+    allToiletsLimit: 6000,
     /** Posts (toilets + reviews combined) per rolling hour. SQL mirror above. */
     postRateLimitPerHour: 10,
     /** Photon geocoding fetch timeout (ms). */

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import {
   DndContext,
   PointerSensor,
@@ -505,7 +506,12 @@ export function StepPhotos({
       )}
 
       <div className="note" style={{ fontSize: 11 }}>
-        No people or faces.
+        Photos must follow the{" "}
+        <Link to="/rules" style={{ color: "var(--chart-4)" }}>
+          content rules
+        </Link>
+        . Faces are fine. Don't post your own mess or urine — but a broken toilet
+        with waste left behind is okay.
       </div>
 
       <button className="btn" disabled={anyUploading} onClick={onNext}>

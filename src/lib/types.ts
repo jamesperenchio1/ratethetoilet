@@ -77,7 +77,24 @@ export interface Review {
   hidden: boolean;
 }
 
-export type ReportTargetType = "photo" | "review" | "toilet" | "hint";
+export interface ReviewReply {
+  id: string;
+  review_id: string;
+  author_id: string;
+  body: string;
+  created_at: string;
+  hidden: boolean;
+}
+
+export interface ReviewVote {
+  id: string;
+  review_id: string;
+  voter_id: string;
+  value: number;
+  created_at: string;
+}
+
+export type ReportTargetType = "photo" | "review" | "toilet" | "hint" | "reply";
 export type ReportStatus = "queued" | "resolved" | "dismissed";
 
 export interface Report {
@@ -96,7 +113,11 @@ export interface Report {
 export interface ToiletWithAuthor extends Toilet {
   author?: Pick<Profile, "id" | "handle"> | null;
   photos?: ToiletPhoto[];
-  reviews?: (Review & { author?: Pick<Profile, "id" | "handle"> | null })[];
+  reviews?: (Review & {
+    author?: Pick<Profile, "id" | "handle"> | null;
+    replies?: (ReviewReply & { author?: Pick<Profile, "id" | "handle"> | null })[];
+    votes?: ReviewVote[];
+  })[];
 }
 
 export interface QueuedPost {

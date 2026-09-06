@@ -17,6 +17,11 @@ interface Filters {
 }
 
 const SHEET_PEEK = CONFIG.map.sheetPeekPx;
+// With OSM's ~4k Thailand toilets imported, rendering every row as a map pin
+// and a list card froze the map. These caps keep the nearest rows on screen
+// (withDistance is already sorted nearest-first) so the map stays smooth.
+const MAX_PINS = 200;
+const MAX_LIST = 60;
 
 export function Home() {
   const navigate = useNavigate();
@@ -128,7 +133,11 @@ export function Home() {
   // multi-floor place shows as a single tappable pin with a "N" count
   // instead of several overlapping ones. Single-toilet venues stay as-is.
   const { pins, pinTargets } = useMemo(() => {
-    const groups = groupToiletsByVenue(filtered);
+    // Only render the nearest MAX_PINS toilets as map pins; withDistance is
+    // already sorted nearest-first, so this keeps the map smooth while still
+    // showing the closest places.
+    const nearest = withDistance.slice(0, MAX_PINS).map(({ t }) => t);
+    const groups = groupToiletsByVenue(nearest);
     const targets = new Map<string, string>();
     const out = groups.map((g) => {
       if (g.toilets.length > 1) {
@@ -152,7 +161,7 @@ export function Home() {
       };
     });
     return { pins: out, pinTargets: targets };
-  }, [filtered]);
+  }, [withDistance]);
 
   const onGpsClick = useCallback(() => {
     if (userLocation) {
@@ -404,6 +413,11 @@ export function Home() {
               </b>
               <span style={{ color: "var(--chart-4)" }}>{sheetExpanded ? "Show map" : "See list"}</span>
             </div>
+            {toilets && withDistance.length > MAX_LIST && (
+              <div style={{ padding: "0 12px 4px", fontSize: 11, color: "var(--text-muted)" }}>
+                Showing the {MAX_LIST} nearest · move the map to load more
+              </div>
+            )}
           </div>
 
           <div className="screen-body" style={{ paddingTop: 2 }}>
@@ -440,8 +454,16 @@ export function Home() {
                 </button>
               </div>
             )}
-            {withDistance.map(({ t, d }) => (
-              <ToiletCard key={t.id} toilet={t} distanceMeters={d} />
+            {withDistance.slice(0, MAX_LIST).map(({ t, d }) => (
+              <ToiletCard
+                key={t.id}
+                toilet={t}
+                distanceMeters={d}
+                onSelect={(sel) => {
+                  setCenter({ lat: sel.lat, lng: sel.lng });
+                  setSheetExpanded(false);
+                }}
+              />
             ))}
           </div>
         </div>
