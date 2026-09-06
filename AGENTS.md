@@ -36,6 +36,14 @@ docker exec -i supabase-db psql -U postgres -d postgres < supabase/migrations/NN
 
 Numbered migrations build on each other (0002 redefines functions from 0001); apply in order.
 
+**Ownership gotcha:** `postgres` in the container is *not* a superuser, and some functions are owned by `supabase_admin` (the actual superuser, password in the container's `POSTGRES_PASSWORD` env). Applying a `create or replace function` for one of those as `postgres` fails with "must be owner of function" — `alter function ... owner` and `set role` fail the same way. For such functions, pipe the SQL in as `supabase_admin` instead (password comes from the container env, never the command line):
+
+```bash
+ssh james@192.168.1.102 "docker exec -i supabase-db sh -c 'PGPASSWORD=\$POSTGRES_PASSWORD psql -U supabase_admin -d postgres'" < <(tail -n +16 supabase/migrations/0008_location_address.sql)
+```
+
+(0008 hit this: its `alter table` half applies fine as `postgres`, but its `update_own_toilet` rewrite had to go in as `supabase_admin`.)
+
 ## Deploy
 
 Vercel auto-deploys `main` (`.vercel/` is gitignored, `dist/` is a local build artifact). Commits to `main` ship immediately.
