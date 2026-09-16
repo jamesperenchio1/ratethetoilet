@@ -166,6 +166,7 @@ export function MapView({
   maxZoom = MAX_ZOOM,
   cacheKey,
   userLocation,
+  selectedPinId,
 }: {
   pins?: MapPin[];
   center?: { lat: number; lng: number };
@@ -186,6 +187,10 @@ export function MapView({
   cacheKey?: string;
   /** The device's live position, drawn as a GPS dot (+ heading cone if known). */
   userLocation?: { lat: number; lng: number; heading?: number | null } | null;
+  /** Pin `id` currently opened in a preview card — drawn enlarged/highlighted
+   * while every other pin dims, so the tapped pin stays unambiguous even in a
+   * dense cluster of nearby listings. */
+  selectedPinId?: string | null;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MaplibreMap | null>(null);
@@ -322,14 +327,16 @@ export function MapView({
       return pin.score == null ? "–" : String(pin.score);
     }
 
-    function styleEl(el: HTMLDivElement, pin: MapPin, showLabel: boolean) {
+    function styleEl(el: HTMLDivElement, pin: MapPin, showLabel: boolean, selected: boolean, dimmed: boolean) {
       el.style.background = scoreColor(pin.score);
       el.style.color = "#fff";
-      el.style.font = "600 11px 'IBM Plex Mono', monospace";
-      el.style.padding = "4px 8px";
+      el.style.font = selected ? "700 12px 'IBM Plex Mono', monospace" : "600 11px 'IBM Plex Mono', monospace";
+      el.style.padding = selected ? "6px 10px" : "4px 8px";
       el.style.borderRadius = "999px";
-      el.style.border = "1.5px solid rgba(255,255,255,.8)";
-      el.style.boxShadow = "0 1px 3px rgba(0,0,0,.3)";
+      el.style.border = selected ? "2px solid var(--chart-4)" : "1.5px solid rgba(255,255,255,.8)";
+      el.style.boxShadow = selected ? "0 2px 8px rgba(0,0,0,.45)" : "0 1px 3px rgba(0,0,0,.3)";
+      el.style.opacity = dimmed ? "0.4" : "1";
+      el.style.zIndex = selected ? "5" : "0";
       el.style.cursor = "pointer";
       el.style.maxWidth = "180px";
       el.style.overflow = "hidden";
@@ -370,16 +377,18 @@ export function MapView({
       }
       for (const pin of renderPins) {
         const isCluster = pin.id.startsWith("cluster:");
+        const selected = selectedPinId != null && pin.id === selectedPinId;
+        const dimmed = selectedPinId != null && !selected;
         const current = existing.get(pin.id);
         if (current) {
           current.setLngLat([pin.lng, pin.lat]);
-          styleEl(current.getElement() as HTMLDivElement, pin, showLabels);
+          styleEl(current.getElement() as HTMLDivElement, pin, showLabels, selected, dimmed);
           continue;
         }
         const el = document.createElement("div");
         el.setAttribute("role", "button");
         el.tabIndex = 0;
-        styleEl(el, pin, showLabels);
+        styleEl(el, pin, showLabels, selected, dimmed);
         const marker = new Marker({ element: el }).setLngLat([pin.lng, pin.lat]).addTo(m);
         // A cluster isn't one toilet — clicking it zooms in on it instead of
         // navigating anywhere. Read the marker's live position (not the pin
@@ -419,7 +428,7 @@ export function MapView({
       map.fitBounds(bounds, { padding: 60, duration: 500, maxZoom });
       fitDoneRef.current = true;
     }
-  }, [pins, fitToPins, maxZoom]);
+  }, [pins, fitToPins, maxZoom, selectedPinId]);
 
   useEffect(() => {
     const map = mapRef.current;

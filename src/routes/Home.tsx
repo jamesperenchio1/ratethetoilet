@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { MapView, locateDevice, useDeviceLocation } from "../components/map/MapView";
+import { ListingPreviewCard } from "../components/map/ListingPreviewCard";
 import { ToiletCard } from "../components/toilet/ToiletCard";
 import { listAllToilets } from "../lib/api";
 import { haversineMeters, venueTypesLabel } from "../lib/labels";
@@ -42,6 +43,7 @@ export function Home() {
   const hadNavCenter = useRef(!!navCenter);
   const autoCentered = useRef(false);
   const [gpsFailed, setGpsFailed] = useState(false);
+  const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [filters, setFilters] = useState<Filters>({
     freeOnly: false,
     wheelchairOnly: false,
@@ -163,6 +165,12 @@ export function Home() {
     return { pins: out, pinTargets: targets };
   }, [withDistance]);
 
+  // The pin currently showing its preview card — cleared automatically once
+  // it drops out of `pins` (e.g. a filter change hides it) since `selectedPin`
+  // then comes back undefined and the card stops rendering.
+  const selectedPin = useMemo(() => pins.find((p) => p.id === selectedKey) ?? null, [pins, selectedKey]);
+  const selectedTargetId = selectedKey ? pinTargets.get(selectedKey) ?? selectedKey : null;
+
   const onGpsClick = useCallback(() => {
     if (userLocation) {
       setCenter({ lat: userLocation.lat, lng: userLocation.lng });
@@ -192,7 +200,8 @@ export function Home() {
           pins={pins}
           center={center}
           fitToPins={!hadNavCenter.current}
-          onPinClick={(id) => navigate(`/t/${pinTargets.get(id) ?? id}`)}
+          onPinClick={(id) => setSelectedKey(id)}
+          selectedPinId={selectedKey}
           onGpsClick={onGpsClick}
           draggableMarker={placeMarker ?? undefined}
           onDraggableMarkerMove={onDraggableMarkerMove}
@@ -301,7 +310,30 @@ export function Home() {
           </div>
         )}
 
-        {placeMarker && !sheetExpanded && (
+        {selectedPin && selectedTargetId && !sheetExpanded && (
+          <div
+            style={{
+              position: "absolute",
+              left: 8,
+              right: 8,
+              bottom: SHEET_PEEK + 10,
+              zIndex: 4,
+            }}
+          >
+            <ListingPreviewCard
+              key={selectedTargetId}
+              toiletId={selectedTargetId}
+              title={selectedPin.label ?? "Toilet"}
+              score={selectedPin.score}
+              count={selectedPin.count}
+              distanceMeters={haversineMeters(distanceOrigin, selectedPin)}
+              onClose={() => setSelectedKey(null)}
+              onOpen={() => navigate(`/t/${selectedTargetId}`)}
+            />
+          </div>
+        )}
+
+        {!selectedPin && placeMarker && !sheetExpanded && (
           <div
             style={{
               position: "absolute",
@@ -344,7 +376,7 @@ export function Home() {
           </div>
         )}
 
-        {!sheetExpanded && (
+        {!selectedPin && !sheetExpanded && (
           <span
             className="home-add"
             role="button"
