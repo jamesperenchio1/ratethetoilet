@@ -359,12 +359,10 @@ export function ToiletDetail() {
               <span style={{ fontSize: 13 }}>{toilet.supplies.join(", ")}</span>
             </div>
           )}
-          {address && (
-            <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
-              <span className="lbl" style={{ flexShrink: 0, width: 76 }}>Address</span>
-              <AddressBlock address={address} />
-            </div>
-          )}
+          <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+            <span className="lbl" style={{ flexShrink: 0, width: 76 }}>Address</span>
+            <AddressBlock address={address} lat={toilet.lat} lng={toilet.lng} label={title} />
+          </div>
         </div>
 
         {profile?.id === toilet.author_id && (
